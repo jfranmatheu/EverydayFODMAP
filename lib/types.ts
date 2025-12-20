@@ -206,6 +206,17 @@ export const MEAL_TYPE_LABELS: Record<MealType, string> = {
   other: 'Otro',
 };
 
+// Days of the week (Sunday = 0)
+export const DAY_LABELS: string[] = [
+  'Domingo',
+  'Lunes',
+  'Martes',
+  'Miércoles',
+  'Jueves',
+  'Viernes',
+  'Sábado',
+];
+
 export const DIFFICULTY_LABELS: Record<RecipeDifficulty, string> = {
   easy: 'Fácil',
   medium: 'Media',

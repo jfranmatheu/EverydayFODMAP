@@ -1,22 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  View, 
-  Text, 
-  ScrollView, 
-  Pressable,
-  Dimensions,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import Animated, { 
-  FadeInDown,
-  FadeInRight,
-  FadeIn,
-} from 'react-native-reanimated';
-import { useTheme } from '@/contexts/ThemeContext';
-import { useDatabase } from '@/contexts/DatabaseContext';
 import { Card } from '@/components/ui';
+import { useDatabase } from '@/contexts/DatabaseContext';
+import { useTheme } from '@/contexts/ThemeContext';
 import { getDatabase } from '@/lib/database';
-import { DAY_LABELS, MEAL_TYPE_LABELS, BRISTOL_SCALE, INTENSITY_LABELS } from '@/lib/types';
+import { BRISTOL_SCALE, DAY_LABELS, MEAL_TYPE_LABELS } from '@/lib/types';
+import { Ionicons } from '@expo/vector-icons';
+import React, { useCallback, useEffect, useState } from 'react';
+import {
+  Dimensions,
+  Pressable,
+  ScrollView,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import Animated, {
+  FadeIn,
+  FadeInDown
+} from 'react-native-reanimated';
 
 type ViewMode = 'month' | 'week' | 'day';
 
@@ -187,7 +187,7 @@ export default function CalendarScreen() {
   };
 
   const getWeekDays = () => {
-    const selectedDateObj = new Date(selectedDate + 'T00:00:00');
+    const selectedDateObj = new Date(selectedDate + 'T12:00:00');
     const dayOfWeek = selectedDateObj.getDay();
     const weekStart = new Date(selectedDateObj);
     weekStart.setDate(selectedDateObj.getDate() - dayOfWeek);
@@ -212,33 +212,36 @@ export default function CalendarScreen() {
     return `${year}-${month}-${dayStr}`;
   };
 
-  const navigateMonth = (direction: number) => {
-    setCurrentDate(prev => {
-      const newDate = new Date(prev);
-      newDate.setMonth(newDate.getMonth() + direction);
-      return newDate;
-    });
-  };
+  const navigate = useCallback((direction: number) => {
+    if (viewMode === 'month') {
+      // Navigate month
+      setCurrentDate(prev => {
+        const newDate = new Date(prev);
+        newDate.setMonth(newDate.getMonth() + direction);
+        return newDate;
+      });
+    } else if (viewMode === 'week') {
+      // Navigate week - move 7 days
+      const currentSelectedDate = new Date(selectedDate + 'T12:00:00');
+      currentSelectedDate.setDate(currentSelectedDate.getDate() + (direction * 7));
+      const newDateStr = currentSelectedDate.toISOString().split('T')[0];
+      setSelectedDate(newDateStr);
+      setCurrentDate(currentSelectedDate);
+    } else {
+      // Navigate day - move 1 day
+      const currentSelectedDate = new Date(selectedDate + 'T12:00:00');
+      currentSelectedDate.setDate(currentSelectedDate.getDate() + direction);
+      const newDateStr = currentSelectedDate.toISOString().split('T')[0];
+      setSelectedDate(newDateStr);
+      setCurrentDate(currentSelectedDate);
+    }
+  }, [viewMode, selectedDate]);
 
-  const navigateWeek = (direction: number) => {
-    const selectedDateObj = new Date(selectedDate + 'T00:00:00');
-    selectedDateObj.setDate(selectedDateObj.getDate() + (direction * 7));
-    setSelectedDate(selectedDateObj.toISOString().split('T')[0]);
-    setCurrentDate(selectedDateObj);
-  };
-
-  const navigateDay = (direction: number) => {
-    const selectedDateObj = new Date(selectedDate + 'T00:00:00');
-    selectedDateObj.setDate(selectedDateObj.getDate() + direction);
-    setSelectedDate(selectedDateObj.toISOString().split('T')[0]);
-    setCurrentDate(selectedDateObj);
-  };
-
-  const goToToday = () => {
-    const today = new Date();
-    setCurrentDate(today);
-    setSelectedDate(today.toISOString().split('T')[0]);
-  };
+  const goToToday = useCallback(() => {
+    const now = new Date();
+    setCurrentDate(now);
+    setSelectedDate(now.toISOString().split('T')[0]);
+  }, []);
 
   const today = new Date().toISOString().split('T')[0];
   const monthNames = [
@@ -549,8 +552,7 @@ export default function CalendarScreen() {
       </Animated.View>
 
       {/* Navigation Header */}
-      <Animated.View 
-        entering={FadeInDown.delay(100).springify()}
+      <View 
         style={{ 
           flexDirection: 'row', 
           alignItems: 'center', 
@@ -559,21 +561,22 @@ export default function CalendarScreen() {
           paddingVertical: 16,
         }}
       >
-        <Pressable 
-          onPress={() => viewMode === 'month' ? navigateMonth(-1) : viewMode === 'week' ? navigateWeek(-1) : navigateDay(-1)}
+        <TouchableOpacity 
+          onPress={() => navigate(-1)}
+          activeOpacity={0.7}
           style={{
-            width: 40,
-            height: 40,
-            borderRadius: 20,
+            width: 44,
+            height: 44,
+            borderRadius: 22,
             backgroundColor: colors.card,
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
-          <Ionicons name="chevron-back" size={20} color={colors.text} />
-        </Pressable>
+          <Ionicons name="chevron-back" size={22} color={colors.text} />
+        </TouchableOpacity>
         
-        <Pressable onPress={goToToday}>
+        <TouchableOpacity onPress={goToToday} activeOpacity={0.7}>
           <Text style={{ 
             fontSize: 18, 
             fontWeight: '700', 
@@ -582,26 +585,27 @@ export default function CalendarScreen() {
             {viewMode === 'month' 
               ? `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`
               : viewMode === 'week'
-                ? `Semana del ${new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}`
-                : new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })
+                ? `Semana del ${new Date(selectedDate + 'T12:00:00').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}`
+                : new Date(selectedDate + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' })
             }
           </Text>
-        </Pressable>
+        </TouchableOpacity>
 
-        <Pressable 
-          onPress={() => viewMode === 'month' ? navigateMonth(1) : viewMode === 'week' ? navigateWeek(1) : navigateDay(1)}
+        <TouchableOpacity 
+          onPress={() => navigate(1)}
+          activeOpacity={0.7}
           style={{
-            width: 40,
-            height: 40,
-            borderRadius: 20,
+            width: 44,
+            height: 44,
+            borderRadius: 22,
             backgroundColor: colors.card,
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
-          <Ionicons name="chevron-forward" size={20} color={colors.text} />
-        </Pressable>
-      </Animated.View>
+          <Ionicons name="chevron-forward" size={22} color={colors.text} />
+        </TouchableOpacity>
+      </View>
 
       {/* Month View */}
       {viewMode === 'month' && (
@@ -774,7 +778,7 @@ export default function CalendarScreen() {
             color: colors.text,
             marginBottom: 12,
           }}>
-            {selectedDate === today ? 'Hoy' : new Date(selectedDate + 'T00:00:00').toLocaleDateString('es-ES', { 
+            {selectedDate === today ? 'Hoy' : new Date(selectedDate + 'T12:00:00').toLocaleDateString('es-ES', { 
               weekday: 'long', 
               day: 'numeric', 
               month: 'long' 
