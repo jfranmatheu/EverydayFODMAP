@@ -7,6 +7,7 @@ import {
   Pressable,
   Alert,
   Modal,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
@@ -261,33 +262,40 @@ export default function RecipeScreen() {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (isInternal) {
       Alert.alert('No permitido', 'Las recetas de la base de datos FODMAP no pueden eliminarse');
       return;
     }
     
-    Alert.alert(
-      'Eliminar receta',
-      '¿Estás seguro de que quieres eliminar esta receta?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteRow('recipes', parseInt(id!));
-              Alert.alert('Eliminado', 'Receta eliminada correctamente');
-              router.back();
-            } catch (error) {
-              console.error('Error deleting recipe:', error);
-              Alert.alert('Error', 'No se pudo eliminar la receta');
-            }
-          },
-        },
-      ]
-    );
+    // Use window.confirm on web, Alert.alert on native
+    const confirmed = Platform.OS === 'web' 
+      ? window.confirm('¿Estás seguro de que quieres eliminar esta receta?')
+      : await new Promise<boolean>(resolve => {
+          Alert.alert(
+            'Eliminar receta',
+            '¿Estás seguro de que quieres eliminar esta receta?',
+            [
+              { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Eliminar', style: 'destructive', onPress: () => resolve(true) },
+            ]
+          );
+        });
+    
+    if (confirmed) {
+      try {
+        await deleteRow('recipes', parseInt(id!));
+        if (Platform.OS === 'web') {
+          alert('Receta eliminada correctamente');
+        } else {
+          Alert.alert('Eliminado', 'Receta eliminada correctamente');
+        }
+        router.back();
+      } catch (error) {
+        console.error('Error deleting recipe:', error);
+        Alert.alert('Error', 'No se pudo eliminar la receta');
+      }
+    }
   };
 
   const handleCreateCopy = async () => {

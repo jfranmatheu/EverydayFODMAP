@@ -17,6 +17,7 @@ import React, { useEffect, useState } from 'react';
 import {
     Alert,
     Modal,
+    Platform,
     Pressable,
     ScrollView,
     Switch,
@@ -248,33 +249,40 @@ export default function FoodScreen() {
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (isInternal) {
       Alert.alert('No permitido', 'Los alimentos de la base de datos FODMAP no pueden eliminarse');
       return;
     }
     
-    Alert.alert(
-      'Eliminar alimento',
-      '¿Estás seguro de que quieres eliminar este alimento?',
-      [
-        { text: 'Cancelar', style: 'cancel' },
-        {
-          text: 'Eliminar',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteRow('foods', parseInt(id!));
-              Alert.alert('Eliminado', 'Alimento eliminado correctamente');
-              router.back();
-            } catch (error) {
-              console.error('Error deleting food:', error);
-              Alert.alert('Error', 'No se pudo eliminar el alimento');
-            }
-          },
-        },
-      ]
-    );
+    // Use window.confirm on web, Alert.alert on native
+    const confirmed = Platform.OS === 'web' 
+      ? window.confirm('¿Estás seguro de que quieres eliminar este alimento?')
+      : await new Promise<boolean>(resolve => {
+          Alert.alert(
+            'Eliminar alimento',
+            '¿Estás seguro de que quieres eliminar este alimento?',
+            [
+              { text: 'Cancelar', style: 'cancel', onPress: () => resolve(false) },
+              { text: 'Eliminar', style: 'destructive', onPress: () => resolve(true) },
+            ]
+          );
+        });
+    
+    if (confirmed) {
+      try {
+        await deleteRow('foods', parseInt(id!));
+        if (Platform.OS === 'web') {
+          alert('Alimento eliminado correctamente');
+        } else {
+          Alert.alert('Eliminado', 'Alimento eliminado correctamente');
+        }
+        router.back();
+      } catch (error) {
+        console.error('Error deleting food:', error);
+        Alert.alert('Error', 'No se pudo eliminar el alimento');
+      }
+    }
   };
 
   const updateFodmapDetail = (key: keyof FODMAPDetails, value: FODMAPLevel) => {
