@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "FODMAPTracker",
-    "slug": "FODMAPTracker",
+    "name": "Everyday FODMAP",
+    "slug": "everyday-fodmap",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "fodmaptracker",
+    "scheme": "everydayfodmap",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
