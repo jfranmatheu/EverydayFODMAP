@@ -13,7 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
 import Animated, { FadeInDown } from 'react-native-reanimated';
 import { useTheme } from '@/contexts/ThemeContext';
-import { Card, Button, FODMAPBadge } from '@/components/ui';
+import { Card, Button, FODMAPBadge, ImagePickerButton } from '@/components/ui';
 import { getDatabase, insertRow, updateRow, deleteRow, getRowById } from '@/lib/database';
 import { 
   FODMAPLevel, 
@@ -206,15 +206,6 @@ export default function FoodScreen() {
           },
         },
       ]
-    );
-  };
-
-  const handleImagePick = async () => {
-    // Placeholder - will implement with expo-image-picker
-    Alert.alert(
-      'Seleccionar imagen',
-      'Esta funcionalidad estará disponible próximamente',
-      [{ text: 'OK' }]
     );
   };
 
@@ -469,30 +460,13 @@ export default function FoodScreen() {
               {/* Image */}
               <Animated.View entering={FadeInDown.delay(50).springify()}>
                 <Card style={{ marginBottom: 16 }}>
-                  <Pressable 
-                    onPress={handleImagePick}
-                    style={{
-                      height: 120,
-                      backgroundColor: colors.cardElevated,
-                      borderRadius: 10,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderWidth: 2,
-                      borderColor: colors.border,
-                      borderStyle: 'dashed',
-                    }}
-                  >
-                    {imageUri ? (
-                      <Text style={{ color: colors.text }}>Imagen seleccionada</Text>
-                    ) : (
-                      <>
-                        <Ionicons name="camera-outline" size={32} color={colors.textMuted} />
-                        <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 8 }}>
-                          Añadir imagen (opcional)
-                        </Text>
-                      </>
-                    )}
-                  </Pressable>
+                  <ImagePickerButton
+                    imageUri={imageUri}
+                    onImageSelected={setImageUri}
+                    height={120}
+                    placeholder="Añadir foto del alimento"
+                    disabled={isInternal}
+                  />
                 </Card>
               </Animated.View>
 
