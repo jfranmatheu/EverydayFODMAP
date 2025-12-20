@@ -6,7 +6,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-    Dimensions,
     Pressable,
     RefreshControl,
     ScrollView,
@@ -21,10 +20,8 @@ import Animated, {
     withSpring,
 } from 'react-native-reanimated';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const CARD_GAP = 10;
 const CONTAINER_PADDING = 16;
-const CARD_WIDTH = (SCREEN_WIDTH - CONTAINER_PADDING * 2 - CARD_GAP * 2) / 3;
+const CARD_GAP = 8;
 
 interface DashboardStats {
   todayMeals: number;
@@ -283,8 +280,8 @@ export default function HomeScreen() {
               key={action.id}
               entering={FadeInRight.delay(300 + index * 50).springify()}
               style={{ 
-                width: CARD_WIDTH,
-                marginHorizontal: CARD_GAP / 2,
+                width: '33.33%',
+                paddingHorizontal: CARD_GAP / 2,
                 marginBottom: CARD_GAP,
               }}
             >
