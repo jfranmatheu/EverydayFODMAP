@@ -50,19 +50,34 @@ if (typeof window !== 'undefined') {
 
 // Helper to parse INSERT query and extract column names
 function parseInsertQuery(sql: string): { table: string; columns: string[] } | null {
+  // Normalize whitespace (handle multiline queries)
+  const normalizedSql = sql.replace(/\s+/g, ' ').trim();
+  
   // Match: INSERT INTO table (col1, col2, ...) VALUES (?, ?, ...)
-  const match = sql.match(/INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)\s*\(([^)]+)\)/i);
+  const match = normalizedSql.match(/INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)\s*\(([^)]+)\)/i);
   if (match) {
     const table = match[1];
     const columns = match[2].split(',').map(c => c.trim());
+    console.log(`[WebDB] Parsed INSERT: table=${table}, columns=`, columns);
     return { table, columns };
   }
   // Match: INSERT INTO table VALUES (...)
-  const simpleMatch = sql.match(/INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)\s+VALUES/i);
+  const simpleMatch = normalizedSql.match(/INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)\s+VALUES/i);
   if (simpleMatch) {
+    console.log(`[WebDB] Parsed simple INSERT: table=${simpleMatch[1]}`);
     return { table: simpleMatch[1], columns: [] };
   }
+  console.log(`[WebDB] Could not parse INSERT query: ${normalizedSql.substring(0, 100)}`);
   return null;
+}
+
+// Helper to compare values with type coercion
+function valuesEqual(a: any, b: any): boolean {
+  if (a === b) return true;
+  // Handle number/string comparison
+  if (typeof a === 'number' && typeof b === 'string') return a === parseInt(b);
+  if (typeof a === 'string' && typeof b === 'number') return parseInt(a) === b;
+  return String(a) === String(b);
 }
 
 // Helper to filter items based on WHERE clause
@@ -81,15 +96,6 @@ function filterByWhere(items: any[], sql: string, params?: any[]): any[] {
   
   const whereClause = whereMatch[1];
   
-  // Handle: date = ?
-  if (whereClause.includes('date = ?') || whereClause.includes('date=?')) {
-    const dateParam = params[0];
-    console.log(`[WebDB] Filtering by date = ${dateParam}, items before:`, items.length);
-    const filtered = items.filter(item => item.date === dateParam);
-    console.log(`[WebDB] After filter:`, filtered.length);
-    return filtered;
-  }
-  
   // Handle: date BETWEEN ? AND ?
   if (whereClause.toLowerCase().includes('between')) {
     const startDate = params[0];
@@ -97,16 +103,15 @@ function filterByWhere(items: any[], sql: string, params?: any[]): any[] {
     return items.filter(item => item.date >= startDate && item.date <= endDate);
   }
   
-  // Handle: id = ?
-  if (whereClause.includes('id = ?') || whereClause.includes('id=?')) {
-    const idParam = params[0];
-    return items.filter(item => item.id === idParam);
-  }
-  
-  // Handle: name = ?
-  if (whereClause.includes('name = ?') || whereClause.includes('name=?')) {
-    const nameParam = params[0];
-    return items.filter(item => item.name === nameParam);
+  // Generic handler: extract column name from "column = ?" pattern
+  const columnMatch = whereClause.match(/(\w+)\s*=\s*\?/);
+  if (columnMatch) {
+    const column = columnMatch[1];
+    const value = params[0];
+    console.log(`[WebDB] Filtering by ${column} = ${value}, items before: ${items.length}`);
+    const filtered = items.filter(item => valuesEqual(item[column], value));
+    console.log(`[WebDB] After filter: ${filtered.length}`);
+    return filtered;
   }
   
   // Default: return all items if we can't parse the WHERE clause
@@ -135,7 +140,9 @@ function createWebMockDatabase() {
       }
     },
     runAsync: async (sql: string, params?: any[]) => {
-      console.log('[WebDB] runAsync:', sql.substring(0, 80), params);
+      const normalizedForLog = sql.replace(/\s+/g, ' ').trim();
+      console.log('[WebDB] runAsync:', normalizedForLog.substring(0, 100));
+      console.log('[WebDB] params:', JSON.stringify(params));
       
       // Handle INSERT
       const insertInfo = parseInsertQuery(sql);
@@ -168,16 +175,54 @@ function createWebMockDatabase() {
       }
       
       // Handle DELETE
-      const deleteMatch = sql.match(/DELETE FROM (\w+) WHERE id = \?/i);
-      if (deleteMatch && params) {
-        const table = deleteMatch[1];
-        const items = webStorage[table] || [];
-        const index = items.findIndex((item: any) => item.id === params[0]);
-        if (index > -1) {
-          items.splice(index, 1);
-          console.log(`[WebDB] DELETE from ${table}, id:`, params[0]);
-          saveWebStorage();
+      const normalizedSql = sql.replace(/\s+/g, ' ').trim();
+      const deleteTableMatch = normalizedSql.match(/DELETE FROM (\w+)/i);
+      
+      if (deleteTableMatch) {
+        const table = deleteTableMatch[1];
+        
+        if (!webStorage[table]) {
+          webStorage[table] = [];
+          return { changes: 0 };
         }
+        
+        const items = webStorage[table];
+        const initialLength = items.length;
+        
+        // Check for WHERE clause with placeholder
+        const whereParamMatch = normalizedSql.match(/WHERE\s+(\w+)\s*=\s*\?/i);
+        if (whereParamMatch && params && params.length > 0) {
+          const column = whereParamMatch[1];
+          const value = params[0];
+          webStorage[table] = items.filter((item: any) => !valuesEqual(item[column], value));
+          const deletedCount = initialLength - webStorage[table].length;
+          console.log(`[WebDB] DELETE from ${table} WHERE ${column}=${value}, deleted ${deletedCount}/${initialLength} rows`);
+          if (deletedCount > 0) saveWebStorage();
+          return { changes: deletedCount };
+        }
+        
+        // Check for WHERE clause with literal string value (e.g., source = 'user')
+        const whereLiteralMatch = normalizedSql.match(/WHERE\s+(\w+)\s*=\s*'([^']+)'/i);
+        if (whereLiteralMatch) {
+          const column = whereLiteralMatch[1];
+          const value = whereLiteralMatch[2];
+          webStorage[table] = items.filter((item: any) => !valuesEqual(item[column], value));
+          const deletedCount = initialLength - webStorage[table].length;
+          console.log(`[WebDB] DELETE from ${table} WHERE ${column}='${value}', deleted ${deletedCount}/${initialLength} rows`);
+          if (deletedCount > 0) saveWebStorage();
+          return { changes: deletedCount };
+        }
+        
+        // No WHERE clause - delete all rows
+        if (!normalizedSql.includes('WHERE')) {
+          webStorage[table] = [];
+          console.log(`[WebDB] DELETE ALL from ${table}, deleted ${initialLength} rows`);
+          if (initialLength > 0) saveWebStorage();
+          return { changes: initialLength };
+        }
+        
+        console.log(`[WebDB] Unhandled DELETE query: ${normalizedSql}`);
+        return { changes: 0 };
       }
       
       // Handle UPDATE
@@ -545,8 +590,10 @@ export async function initDatabase(): Promise<void> {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       parent_food_id INTEGER REFERENCES foods(id) ON DELETE CASCADE,
       component_food_id INTEGER REFERENCES foods(id) ON DELETE CASCADE,
+      name TEXT,
       quantity REAL NOT NULL,
-      unit TEXT
+      unit TEXT,
+      fodmap_level TEXT CHECK(fodmap_level IN ('low', 'medium', 'high'))
     );
 
     -- Food tags junction table

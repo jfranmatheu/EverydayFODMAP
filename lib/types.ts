@@ -353,14 +353,14 @@ export interface Symptom {
 
 export type BristolType = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 
-export const BRISTOL_SCALE: Record<BristolType, { label: string; description: string; emoji: string }> = {
-  1: { label: 'Tipo 1', description: 'Trozos duros separados', emoji: '🔵' },
-  2: { label: 'Tipo 2', description: 'Forma de salchicha con bultos', emoji: '🟤' },
-  3: { label: 'Tipo 3', description: 'Salchicha con grietas', emoji: '🟫' },
-  4: { label: 'Tipo 4', description: 'Suave y lisa (ideal)', emoji: '🟢' },
-  5: { label: 'Tipo 5', description: 'Trozos blandos con bordes', emoji: '🟡' },
-  6: { label: 'Tipo 6', description: 'Trozos esponjosos', emoji: '🟠' },
-  7: { label: 'Tipo 7', description: 'Líquido, sin trozos', emoji: '🔴' },
+export const BRISTOL_SCALE: Record<BristolType, { label: string; name: string; description: string; emoji: string }> = {
+  1: { label: 'Tipo 1', name: 'Bolitas duras', description: 'Trozos duros separados como nueces', emoji: '🫐' },
+  2: { label: 'Tipo 2', name: 'Salchicha grumosa', description: 'Forma de salchicha con bultos', emoji: '🥜' },
+  3: { label: 'Tipo 3', name: 'Salchicha agrietada', description: 'Salchicha con grietas en superficie', emoji: '🌭' },
+  4: { label: 'Tipo 4', name: 'Suave y lisa', description: 'Como serpiente, suave (ideal)', emoji: '🐍' },
+  5: { label: 'Tipo 5', name: 'Trozos blandos', description: 'Trozos blandos con bordes definidos', emoji: '☁️' },
+  6: { label: 'Tipo 6', name: 'Esponjoso', description: 'Trozos esponjosos y pastosos', emoji: '🧽' },
+  7: { label: 'Tipo 7', name: 'Líquido', description: 'Acuoso, sin trozos sólidos', emoji: '💧' },
 };
 
 export interface BowelMovement {
