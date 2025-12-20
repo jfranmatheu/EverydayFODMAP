@@ -1,0 +1,23 @@
+{
+  "id": "pollo",
+  "name": "Pollo",
+  "category": "protein",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 165,
+    "protein_g": 31,
+    "fat_g": 3.6,
+    "carbs_g": 0
+  }
+}
+

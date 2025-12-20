@@ -1,0 +1,25 @@
+{
+  "id": "zanahoria",
+  "name": "Zanahoria",
+  "category": "vegetable",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low",
+    "safe_serving": "75g"
+  },
+  "serving_size": "75g (1 mediana)",
+  "nutrition": {
+    "calories": 31,
+    "carbs_g": 7,
+    "fiber_g": 2,
+    "protein_g": 0.7,
+    "fat_g": 0.2
+  }
+}
+

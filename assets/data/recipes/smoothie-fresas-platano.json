@@ -1,0 +1,35 @@
+{
+  "id": "smoothie-fresas-platano",
+  "name": "Smoothie de Fresas y Plátano",
+  "description": "Batido nutritivo y refrescante apto para dieta FODMAP",
+  "fodmap_level": "low",
+  "prep_time": 5,
+  "cook_time": 0,
+  "servings": 1,
+  "difficulty": "easy",
+  "meal_types": ["breakfast", "snack"],
+  "dietary": ["vegetarian", "gluten-free"],
+  "ingredients": [
+    { "name": "Fresas", "quantity": 100, "unit": "g", "fodmap_level": "low" },
+    { "name": "Plátano (verde o poco maduro)", "quantity": 1, "unit": "pequeño", "fodmap_level": "low", "notes": "máx 100g" },
+    { "name": "Bebida de almendras", "quantity": 200, "unit": "ml", "fodmap_level": "low" },
+    { "name": "Hielo", "quantity": 4, "unit": "cubitos", "fodmap_level": "low", "optional": true }
+  ],
+  "steps": [
+    { "order": 1, "instruction": "Lava las fresas y retira las hojas" },
+    { "order": 2, "instruction": "Pela y trocea el plátano" },
+    { "order": 3, "instruction": "Añade todos los ingredientes a la batidora" },
+    { "order": 4, "instruction": "Bate hasta obtener una textura suave y cremosa" },
+    { "order": 5, "instruction": "Sirve inmediatamente" }
+  ],
+  "notes": "Usa plátano verde o poco maduro para mantenerlo bajo en FODMAP. Un plátano muy maduro sube a nivel medio.",
+  "nutrition": {
+    "per_serving": true,
+    "calories": 180,
+    "protein_g": 2,
+    "carbs_g": 38,
+    "fat_g": 3,
+    "fiber_g": 4
+  }
+}
+

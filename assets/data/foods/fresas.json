@@ -1,0 +1,18 @@
+{
+  "id": "fresas",
+  "name": "Fresas",
+  "category": "fruit",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low",
+    "safe_serving": "140g (10 fresas)"
+  },
+  "serving_size": "140g"
+}
+

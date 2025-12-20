@@ -1,0 +1,33 @@
+{
+  "id": "pasta-tomate",
+  "name": "Pasta con salsa de tomate casera",
+  "description": "Pasta sin gluten con salsa de tomate fresca sin ajo ni cebolla",
+  "fodmap_level": "low",
+  "prep_time": 10,
+  "cook_time": 20,
+  "servings": 2,
+  "difficulty": "easy",
+  "meal_types": ["lunch", "dinner"],
+  "dietary": ["vegetarian", "vegan", "gluten-free"],
+  "ingredients": [
+    { "name": "Pasta sin gluten", "quantity": 180, "unit": "g", "fodmap_level": "low" },
+    { "name": "Tomate triturado", "quantity": 400, "unit": "g", "fodmap_level": "low", "notes": "sin cebolla ni ajo añadido" },
+    { "name": "Aceite de ajo infusionado", "quantity": 2, "unit": "cucharadas", "fodmap_level": "low" },
+    { "name": "Albahaca fresca", "quantity": 6, "unit": "hojas", "fodmap_level": "low" },
+    { "name": "Sal", "quantity": 1, "unit": "cucharadita", "fodmap_level": "low" },
+    { "name": "Azúcar", "quantity": 0.5, "unit": "cucharadita", "fodmap_level": "low", "optional": true, "notes": "para reducir acidez" },
+    { "name": "Queso parmesano", "quantity": 20, "unit": "g", "fodmap_level": "low", "optional": true }
+  ],
+  "steps": [
+    { "order": 1, "instruction": "Pon a hervir agua con sal para la pasta" },
+    { "order": 2, "instruction": "Mientras, calienta el aceite de ajo en una sartén a fuego medio" },
+    { "order": 3, "instruction": "Añade el tomate triturado y cocina 10-15 minutos" },
+    { "order": 4, "instruction": "Sazona con sal y añade el azúcar si lo deseas" },
+    { "order": 5, "instruction": "Cuece la pasta según las instrucciones del paquete" },
+    { "order": 6, "instruction": "Escurre la pasta reservando un poco del agua de cocción" },
+    { "order": 7, "instruction": "Mezcla la pasta con la salsa, añadiendo agua de cocción si es necesario" },
+    { "order": 8, "instruction": "Sirve con albahaca fresca y parmesano rallado" }
+  ],
+  "notes": "El aceite de ajo infusionado aporta sabor a ajo sin los fructanos. Puedes encontrarlo en tiendas especializadas o hacerlo en casa."
+}
+

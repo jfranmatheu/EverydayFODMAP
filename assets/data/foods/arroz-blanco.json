@@ -1,0 +1,17 @@
+{
+  "id": "arroz-blanco",
+  "name": "Arroz blanco",
+  "category": "grain",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low"
+  },
+  "serving_size": "190g (cocido)"
+}
+

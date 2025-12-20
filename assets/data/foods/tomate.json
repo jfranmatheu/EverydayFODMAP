@@ -1,0 +1,20 @@
+{
+  "id": "tomate",
+  "name": "Tomate",
+  "category": "vegetable",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "medium",
+    "fructose_amount": "Moderado en exceso de fructosa",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low",
+    "safe_serving": "65g (1 pequeño)",
+    "limit_serving": "130g"
+  },
+  "serving_size": "65g"
+}
+

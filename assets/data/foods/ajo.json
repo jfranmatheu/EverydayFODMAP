@@ -1,0 +1,19 @@
+{
+  "id": "ajo",
+  "name": "Ajo",
+  "category": "vegetable",
+  "fodmap_level": "high",
+  "fodmap_details": {
+    "fructans": "high",
+    "fructans_amount": "Alto en fructanos",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "high"
+  },
+  "serving_size": "1 diente",
+  "notes": "El aceite de ajo infusionado es bajo en FODMAP"
+}
+

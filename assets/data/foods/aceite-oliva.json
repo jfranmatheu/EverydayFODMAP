@@ -1,0 +1,17 @@
+{
+  "id": "aceite-oliva",
+  "name": "Aceite de oliva",
+  "category": "fat",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low"
+  },
+  "serving_size": "1 cucharada"
+}
+

@@ -1,0 +1,29 @@
+{
+  "id": "pollo-limon",
+  "name": "Pollo al limón con hierbas",
+  "description": "Pechuga de pollo jugosa marinada en limón y hierbas mediterráneas",
+  "fodmap_level": "low",
+  "prep_time": 10,
+  "cook_time": 25,
+  "servings": 2,
+  "difficulty": "easy",
+  "meal_types": ["lunch", "dinner"],
+  "dietary": ["gluten-free", "dairy-free"],
+  "ingredients": [
+    { "name": "Pechuga de pollo", "quantity": 300, "unit": "g", "fodmap_level": "low" },
+    { "name": "Limón (zumo)", "quantity": 2, "unit": "cucharadas", "fodmap_level": "low" },
+    { "name": "Aceite de oliva", "quantity": 2, "unit": "cucharadas", "fodmap_level": "low" },
+    { "name": "Romero fresco", "quantity": 1, "unit": "ramita", "fodmap_level": "low" },
+    { "name": "Tomillo fresco", "quantity": 1, "unit": "ramita", "fodmap_level": "low" },
+    { "name": "Sal y pimienta", "quantity": 1, "unit": "pizca", "fodmap_level": "low" }
+  ],
+  "steps": [
+    { "order": 1, "instruction": "Mezcla el zumo de limón con el aceite y las hierbas picadas" },
+    { "order": 2, "instruction": "Marina el pollo con esta mezcla durante 15-30 minutos" },
+    { "order": 3, "instruction": "Calienta una sartén o plancha a fuego medio-alto" },
+    { "order": 4, "instruction": "Cocina el pollo 6-7 minutos por cada lado" },
+    { "order": 5, "instruction": "Deja reposar 3 minutos antes de cortar" }
+  ],
+  "notes": "Acompaña con arroz y verduras al vapor para una comida completa."
+}
+

@@ -1,0 +1,18 @@
+{
+  "id": "bebida-almendras",
+  "name": "Bebida de almendras",
+  "category": "dairy",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low"
+  },
+  "serving_size": "250ml",
+  "notes": "Sin azúcares añadidos"
+}
+

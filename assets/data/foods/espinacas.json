@@ -1,0 +1,18 @@
+{
+  "id": "espinacas",
+  "name": "Espinacas",
+  "category": "vegetable",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low",
+    "safe_serving": "75g"
+  },
+  "serving_size": "75g"
+}
+

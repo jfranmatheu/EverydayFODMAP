@@ -1,0 +1,34 @@
+{
+  "id": "ensalada-mediterranea",
+  "name": "Ensalada Mediterránea",
+  "description": "Ensalada fresca y ligera con ingredientes bajos en FODMAP",
+  "fodmap_level": "low",
+  "prep_time": 15,
+  "cook_time": 0,
+  "servings": 2,
+  "difficulty": "easy",
+  "meal_types": ["lunch", "dinner"],
+  "dietary": ["vegetarian", "gluten-free"],
+  "ingredients": [
+    { "name": "Tomate", "quantity": 2, "unit": "pequeños", "fodmap_level": "low", "notes": "máx 65g cada uno" },
+    { "name": "Pepino", "quantity": 1, "unit": "mediano", "fodmap_level": "low" },
+    { "name": "Pimiento rojo", "quantity": 0.5, "unit": "unidad", "fodmap_level": "low" },
+    { "name": "Aceitunas negras", "quantity": 10, "unit": "unidades", "fodmap_level": "low" },
+    { "name": "Queso feta", "quantity": 40, "unit": "g", "fodmap_level": "low" },
+    { "name": "Aceite de oliva", "quantity": 2, "unit": "cucharadas", "fodmap_level": "low" },
+    { "name": "Vinagre balsámico", "quantity": 1, "unit": "cucharada", "fodmap_level": "low" },
+    { "name": "Orégano seco", "quantity": 1, "unit": "cucharadita", "fodmap_level": "low" },
+    { "name": "Sal y pimienta", "quantity": 1, "unit": "pizca", "fodmap_level": "low" }
+  ],
+  "steps": [
+    { "order": 1, "instruction": "Lava y corta los tomates en gajos" },
+    { "order": 2, "instruction": "Corta el pepino en rodajas o medias lunas" },
+    { "order": 3, "instruction": "Corta el pimiento en tiras finas" },
+    { "order": 4, "instruction": "Mezcla las verduras en un bol grande" },
+    { "order": 5, "instruction": "Añade las aceitunas y el queso feta desmenuzado" },
+    { "order": 6, "instruction": "Prepara el aliño mezclando aceite, vinagre, orégano, sal y pimienta" },
+    { "order": 7, "instruction": "Aliña la ensalada justo antes de servir" }
+  ],
+  "notes": "No añadas cebolla. Puedes usar la parte verde de la cebolleta si quieres un toque similar."
+}
+

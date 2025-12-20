@@ -1,0 +1,46 @@
+{
+  "id": "arroz-con-pollo",
+  "name": "Arroz con Pollo bajo en FODMAP",
+  "description": "Un clásico plato reconfortante adaptado para dieta FODMAP",
+  "fodmap_level": "low",
+  "prep_time": 15,
+  "cook_time": 35,
+  "servings": 4,
+  "difficulty": "easy",
+  "meal_types": ["lunch", "dinner"],
+  "cuisine": "Española",
+  "dietary": ["gluten-free", "dairy-free"],
+  "ingredients": [
+    { "name": "Pechuga de pollo", "quantity": 400, "unit": "g", "fodmap_level": "low" },
+    { "name": "Arroz blanco", "quantity": 200, "unit": "g", "fodmap_level": "low" },
+    { "name": "Pimiento rojo", "quantity": 1, "unit": "unidad", "fodmap_level": "low" },
+    { "name": "Caldo de pollo bajo en FODMAP", "quantity": 500, "unit": "ml", "fodmap_level": "low", "notes": "sin cebolla ni ajo" },
+    { "name": "Aceite de oliva", "quantity": 2, "unit": "cucharadas", "fodmap_level": "low" },
+    { "name": "Pimentón dulce", "quantity": 1, "unit": "cucharadita", "fodmap_level": "low" },
+    { "name": "Sal", "quantity": 1, "unit": "pizca", "fodmap_level": "low" },
+    { "name": "Perejil fresco", "quantity": 2, "unit": "cucharadas", "fodmap_level": "low", "optional": true }
+  ],
+  "steps": [
+    { "order": 1, "title": "Preparación", "instruction": "Sazona el pollo con sal, pimienta y pimentón" },
+    { "order": 2, "instruction": "En una sartén grande, calienta el aceite de oliva a fuego medio-alto" },
+    { "order": 3, "instruction": "Dora el pollo por ambos lados (5 minutos por lado)" },
+    { "order": 4, "instruction": "Retira el pollo y reserva" },
+    { "order": 5, "title": "Cocción", "instruction": "En la misma sartén, añade el pimiento rojo cortado en tiras y cocina 3 minutos" },
+    { "order": 6, "instruction": "Añade el arroz y tuesta durante 2 minutos, removiendo" },
+    { "order": 7, "instruction": "Vierte el caldo y lleva a ebullición" },
+    { "order": 8, "instruction": "Reduce el fuego a medio-bajo, coloca el pollo encima del arroz" },
+    { "order": 9, "instruction": "Tapa y cocina 20 minutos hasta que el arroz absorba el líquido" },
+    { "order": 10, "title": "Servir", "instruction": "Deja reposar 5 minutos antes de servir" },
+    { "order": 11, "instruction": "Decora con perejil fresco picado" }
+  ],
+  "notes": "Puedes usar aceite de ajo infusionado para dar sabor sin los fructanos del ajo.",
+  "nutrition": {
+    "per_serving": true,
+    "calories": 380,
+    "protein_g": 32,
+    "carbs_g": 42,
+    "fat_g": 8,
+    "fiber_g": 2
+  }
+}
+

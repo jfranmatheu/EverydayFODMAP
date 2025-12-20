@@ -1,4 +1,5 @@
 import { Platform } from 'react-native';
+import { INTERNAL_FOODS, INTERNAL_RECIPES, loadInternalData } from './internal-data';
 
 const DATABASE_NAME = 'everyday_fodmap.db';
 const WEB_STORAGE_KEY = 'everyday_fodmap_webdb';
@@ -341,6 +342,102 @@ export async function getDatabase(): Promise<any> {
   return db;
 }
 
+// Load internal data for web mock
+async function loadInternalDataWeb(): Promise<void> {
+  // Check if already loaded
+  if (webStorage['foods'] && webStorage['foods'].some((f: any) => f.source === 'internal')) {
+    console.log('[WebDB] Internal data already loaded');
+    return;
+  }
+
+  // Load foods
+  if (!webStorage['foods']) webStorage['foods'] = [];
+  
+  let foodId = webStorage['foods'].length + 1;
+  for (const food of INTERNAL_FOODS) {
+    webStorage['foods'].push({
+      id: foodId++,
+      name: food.name,
+      category: food.category,
+      fodmap_level: food.fodmap_level,
+      fodmap_details: food.fodmap_details ? JSON.stringify(food.fodmap_details) : null,
+      nutrition: food.nutrition ? JSON.stringify(food.nutrition) : null,
+      serving_size: food.serving_size,
+      notes: food.notes,
+      source: 'internal',
+      source_id: food.id, // Original ID from JSON (e.g., "zanahoria")
+      is_compound: false,
+      created_at: new Date().toISOString(),
+    });
+  }
+
+  // Load recipes
+  if (!webStorage['recipes']) webStorage['recipes'] = [];
+  if (!webStorage['recipe_steps']) webStorage['recipe_steps'] = [];
+  if (!webStorage['recipe_ingredients']) webStorage['recipe_ingredients'] = [];
+
+  let recipeId = webStorage['recipes'].length + 1;
+  let stepId = webStorage['recipe_steps'].length + 1;
+  let ingId = webStorage['recipe_ingredients'].length + 1;
+
+  for (const recipe of INTERNAL_RECIPES) {
+    const currentRecipeId = recipeId++;
+    
+    webStorage['recipes'].push({
+      id: currentRecipeId,
+      name: recipe.name,
+      description: recipe.description,
+      fodmap_level: recipe.fodmap_level,
+      prep_time: recipe.prep_time,
+      cook_time: recipe.cook_time,
+      servings: recipe.servings,
+      difficulty: recipe.difficulty,
+      cuisine: recipe.cuisine,
+      notes: recipe.notes,
+      meal_types: recipe.meal_types ? JSON.stringify(recipe.meal_types) : null,
+      dietary: recipe.dietary ? JSON.stringify(recipe.dietary) : null,
+      nutrition: recipe.nutrition ? JSON.stringify(recipe.nutrition) : null,
+      source: 'internal',
+      source_id: recipe.id, // Original ID from JSON (e.g., "arroz-con-pollo")
+      created_at: new Date().toISOString(),
+    });
+
+    // Add steps
+    if (recipe.steps) {
+      for (const step of recipe.steps) {
+        webStorage['recipe_steps'].push({
+          id: stepId++,
+          recipe_id: currentRecipeId,
+          step_order: step.order,
+          title: step.title,
+          instruction: step.instruction,
+          duration_minutes: step.duration_minutes,
+          tip: step.tip,
+        });
+      }
+    }
+
+    // Add ingredients
+    if (recipe.ingredients) {
+      for (const ing of recipe.ingredients) {
+        webStorage['recipe_ingredients'].push({
+          id: ingId++,
+          recipe_id: currentRecipeId,
+          name: ing.name,
+          quantity: ing.quantity,
+          unit: ing.unit,
+          fodmap_level: ing.fodmap_level,
+          notes: ing.notes,
+          is_optional: ing.optional ? 1 : 0,
+        });
+      }
+    }
+  }
+
+  saveWebStorage();
+  console.log(`[WebDB] Loaded ${INTERNAL_FOODS.length} internal foods and ${INTERNAL_RECIPES.length} internal recipes`);
+}
+
 export async function initDatabase(): Promise<void> {
   const database = await getDatabase();
 
@@ -349,8 +446,11 @@ export async function initDatabase(): Promise<void> {
     await database.execAsync(`
       CREATE TABLE IF NOT EXISTS tags;
       CREATE TABLE IF NOT EXISTS folders;
-      CREATE TABLE IF NOT EXISTS ingredients;
+      CREATE TABLE IF NOT EXISTS foods;
+      CREATE TABLE IF NOT EXISTS food_components;
       CREATE TABLE IF NOT EXISTS recipes;
+      CREATE TABLE IF NOT EXISTS recipe_steps;
+      CREATE TABLE IF NOT EXISTS recipe_ingredients;
       CREATE TABLE IF NOT EXISTS meals;
       CREATE TABLE IF NOT EXISTS meal_items;
       CREATE TABLE IF NOT EXISTS water_intake;
@@ -364,6 +464,7 @@ export async function initDatabase(): Promise<void> {
       CREATE TABLE IF NOT EXISTS activity_logs;
       CREATE TABLE IF NOT EXISTS scheduled_activities;
       CREATE TABLE IF NOT EXISTS scheduled_activity_logs;
+      CREATE TABLE IF NOT EXISTS ingredients;
     `);
     
     // Add default activity types for web (only if not already set)
@@ -381,6 +482,9 @@ export async function initDatabase(): Promise<void> {
       webStorage['activity_types'] = defaultActivities;
       saveWebStorage();
     }
+
+    // Load internal foods data for web
+    await loadInternalDataWeb();
     
     console.log('Web mock database initialized');
     console.log('[WebDB] Current tables:', Object.keys(webStorage));
@@ -407,57 +511,105 @@ export async function initDatabase(): Promise<void> {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       parent_id INTEGER REFERENCES folders(id) ON DELETE CASCADE,
+      icon TEXT,
       color TEXT DEFAULT '#2196F3',
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Ingredients table
-    CREATE TABLE IF NOT EXISTS ingredients (
+    -- Foods table (replaces ingredients, supports compound foods)
+    CREATE TABLE IF NOT EXISTS foods (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      fodmap_level TEXT CHECK(fodmap_level IN ('low', 'medium', 'high')) DEFAULT 'low',
-      fructose REAL DEFAULT 0,
-      lactose REAL DEFAULT 0,
-      fructans REAL DEFAULT 0,
-      galactans REAL DEFAULT 0,
-      polyols REAL DEFAULT 0,
+      category TEXT DEFAULT 'other',
+      fodmap_level TEXT CHECK(fodmap_level IN ('low', 'medium', 'high', 'unknown')) DEFAULT 'unknown',
+      fodmap_details TEXT, -- JSON with fructans, gos, lactose, fructose, sorbitol, mannitol
+      is_compound INTEGER DEFAULT 0,
+      nutrition TEXT, -- JSON with nutrition info
+      nutri_score TEXT CHECK(nutri_score IN ('A', 'B', 'C', 'D', 'E') OR nutri_score IS NULL),
       serving_size TEXT,
+      brand TEXT,
+      barcode TEXT,
+      image_uri TEXT,
       notes TEXT,
+      tags TEXT, -- JSON array
       folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL,
+      is_favorite INTEGER DEFAULT 0,
+      source TEXT CHECK(source IN ('user', 'internal', 'external')) DEFAULT 'user',
+      source_id TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Ingredient tags junction table
-    CREATE TABLE IF NOT EXISTS ingredient_tags (
-      ingredient_id INTEGER REFERENCES ingredients(id) ON DELETE CASCADE,
-      tag_id INTEGER REFERENCES tags(id) ON DELETE CASCADE,
-      PRIMARY KEY (ingredient_id, tag_id)
+    -- Food components (for compound foods)
+    CREATE TABLE IF NOT EXISTS food_components (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      parent_food_id INTEGER REFERENCES foods(id) ON DELETE CASCADE,
+      component_food_id INTEGER REFERENCES foods(id) ON DELETE CASCADE,
+      quantity REAL NOT NULL,
+      unit TEXT
     );
 
-    -- Recipes table
+    -- Food tags junction table
+    CREATE TABLE IF NOT EXISTS food_tags (
+      food_id INTEGER REFERENCES foods(id) ON DELETE CASCADE,
+      tag_id INTEGER REFERENCES tags(id) ON DELETE CASCADE,
+      PRIMARY KEY (food_id, tag_id)
+    );
+
+    -- Recipes table (enhanced)
     CREATE TABLE IF NOT EXISTS recipes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       description TEXT,
-      instructions TEXT,
+      fodmap_level TEXT CHECK(fodmap_level IN ('low', 'medium', 'high', 'unknown')) DEFAULT 'unknown',
+      fodmap_details TEXT, -- JSON
       prep_time INTEGER,
       cook_time INTEGER,
+      total_time INTEGER,
       servings INTEGER DEFAULT 1,
-      fodmap_level TEXT CHECK(fodmap_level IN ('low', 'medium', 'high')) DEFAULT 'low',
+      difficulty TEXT CHECK(difficulty IN ('easy', 'medium', 'hard')),
+      cuisine TEXT,
+      meal_types TEXT, -- JSON array
+      dietary TEXT, -- JSON array
+      nutrition TEXT, -- JSON
       image_uri TEXT,
+      notes TEXT,
+      tags TEXT, -- JSON array
       folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL,
+      is_favorite INTEGER DEFAULT 0,
+      source TEXT CHECK(source IN ('user', 'internal', 'external')) DEFAULT 'user',
+      source_id TEXT,
+      source_name TEXT,
+      original_recipe_id INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
+      is_modified_copy INTEGER DEFAULT 0,
+      is_hidden INTEGER DEFAULT 0,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Recipe ingredients junction table
+    -- Recipe steps table
+    CREATE TABLE IF NOT EXISTS recipe_steps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      recipe_id INTEGER REFERENCES recipes(id) ON DELETE CASCADE,
+      step_order INTEGER NOT NULL,
+      title TEXT,
+      instruction TEXT NOT NULL,
+      duration_minutes INTEGER,
+      tip TEXT
+    );
+
+    -- Recipe ingredients (enhanced)
     CREATE TABLE IF NOT EXISTS recipe_ingredients (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       recipe_id INTEGER REFERENCES recipes(id) ON DELETE CASCADE,
-      ingredient_id INTEGER REFERENCES ingredients(id) ON DELETE CASCADE,
+      food_id INTEGER REFERENCES foods(id) ON DELETE SET NULL,
+      name TEXT NOT NULL,
       quantity REAL NOT NULL,
-      unit TEXT
+      unit TEXT,
+      fodmap_level TEXT,
+      notes TEXT,
+      is_optional INTEGER DEFAULT 0,
+      alternatives TEXT -- JSON array
     );
 
     -- Recipe tags junction table
@@ -467,29 +619,28 @@ export async function initDatabase(): Promise<void> {
       PRIMARY KEY (recipe_id, tag_id)
     );
 
-    -- Meals table
+    -- Meals table (enhanced)
     CREATE TABLE IF NOT EXISTS meals (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      meal_type TEXT CHECK(meal_type IN ('breakfast', 'lunch', 'dinner', 'snack', 'other')) DEFAULT 'other',
+      meal_type TEXT CHECK(meal_type IN ('breakfast', 'lunch', 'dinner', 'snack', 'dessert', 'other')) DEFAULT 'other',
       date TEXT NOT NULL,
       time TEXT,
       notes TEXT,
+      image_uri TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Meal items (ingredients or recipes)
+    -- Meal items (foods or recipes)
     CREATE TABLE IF NOT EXISTS meal_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       meal_id INTEGER REFERENCES meals(id) ON DELETE CASCADE,
-      ingredient_id INTEGER REFERENCES ingredients(id) ON DELETE SET NULL,
+      food_id INTEGER REFERENCES foods(id) ON DELETE SET NULL,
       recipe_id INTEGER REFERENCES recipes(id) ON DELETE SET NULL,
+      name TEXT,
       quantity REAL,
       unit TEXT,
-      CHECK (
-        (ingredient_id IS NOT NULL AND recipe_id IS NULL) OR
-        (ingredient_id IS NULL AND recipe_id IS NOT NULL)
-      )
+      fodmap_level TEXT
     );
 
     -- Water intake table
@@ -518,6 +669,7 @@ export async function initDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS treatment_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       treatment_id INTEGER REFERENCES treatments(id) ON DELETE CASCADE,
+      treatment_name TEXT,
       date TEXT NOT NULL,
       time TEXT NOT NULL,
       taken INTEGER DEFAULT 1,
@@ -549,6 +701,17 @@ export async function initDatabase(): Promise<void> {
       discomfort INTEGER CHECK(discomfort BETWEEN 0 AND 10) DEFAULT 0,
       date TEXT NOT NULL,
       time TEXT NOT NULL,
+      notes TEXT,
+      image_uri TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Legacy ingredients table (for compatibility)
+    CREATE TABLE IF NOT EXISTS ingredients (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      fodmap_level TEXT DEFAULT 'low',
+      serving_size TEXT,
       notes TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
@@ -665,6 +828,9 @@ export async function initDatabase(): Promise<void> {
     }
   }
 
+  // Load internal foods and recipes from JSON files
+  await loadInternalData(database);
+
   console.log('Database initialized successfully');
 }
 
@@ -705,10 +871,10 @@ export async function getRows<T>(table: string, where?: string, params?: any[]):
   const query = where 
     ? `SELECT * FROM ${table} WHERE ${where}` 
     : `SELECT * FROM ${table}`;
-  return await database.getAllAsync<T>(query, params || []);
+  return await database.getAllAsync(query, params || []) as T[];
 }
 
 export async function getRowById<T>(table: string, id: number): Promise<T | null> {
   const database = await getDatabase();
-  return await database.getFirstAsync<T>(`SELECT * FROM ${table} WHERE id = ?`, [id]);
+  return await database.getFirstAsync(`SELECT * FROM ${table} WHERE id = ?`, [id]) as T | null;
 }

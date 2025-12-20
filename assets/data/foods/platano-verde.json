@@ -1,0 +1,18 @@
+{
+  "id": "platano-verde",
+  "name": "Plátano (verde)",
+  "category": "fruit",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low",
+    "safe_serving": "100g"
+  },
+  "serving_size": "100g"
+}
+

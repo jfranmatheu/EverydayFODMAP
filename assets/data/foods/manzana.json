@@ -1,0 +1,18 @@
+{
+  "id": "manzana",
+  "name": "Manzana",
+  "category": "fruit",
+  "fodmap_level": "high",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "high",
+    "fructose_amount": "Alto en exceso de fructosa",
+    "sorbitol": "high",
+    "mannitol": "low",
+    "overall": "high"
+  },
+  "serving_size": "Evitar o muy pequeña cantidad"
+}
+

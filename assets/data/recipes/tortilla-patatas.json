@@ -1,0 +1,33 @@
+{
+  "id": "tortilla-patatas",
+  "name": "Tortilla de Patatas sin cebolla",
+  "description": "Clásica tortilla española adaptada para dieta FODMAP",
+  "fodmap_level": "low",
+  "prep_time": 20,
+  "cook_time": 25,
+  "servings": 4,
+  "difficulty": "medium",
+  "meal_types": ["breakfast", "lunch", "dinner"],
+  "cuisine": "Española",
+  "dietary": ["vegetarian", "gluten-free"],
+  "ingredients": [
+    { "name": "Patata", "quantity": 500, "unit": "g", "fodmap_level": "low" },
+    { "name": "Huevo", "quantity": 6, "unit": "unidades", "fodmap_level": "low" },
+    { "name": "Aceite de oliva", "quantity": 200, "unit": "ml", "fodmap_level": "low", "notes": "para freír" },
+    { "name": "Sal", "quantity": 1, "unit": "cucharadita", "fodmap_level": "low" }
+  ],
+  "steps": [
+    { "order": 1, "title": "Preparación", "instruction": "Pela las patatas y córtalas en rodajas finas" },
+    { "order": 2, "instruction": "Calienta el aceite en una sartén grande a fuego medio" },
+    { "order": 3, "title": "Freír patatas", "instruction": "Fríe las patatas en tandas hasta que estén tiernas (15-20 min)" },
+    { "order": 4, "instruction": "Retira las patatas y escúrrelas bien del aceite" },
+    { "order": 5, "instruction": "Bate los huevos en un bol grande con sal" },
+    { "order": 6, "instruction": "Añade las patatas a los huevos batidos y mezcla bien" },
+    { "order": 7, "title": "Cuajar", "instruction": "Deja solo 2 cucharadas de aceite en la sartén" },
+    { "order": 8, "instruction": "Vierte la mezcla y cocina a fuego medio-bajo 5 minutos" },
+    { "order": 9, "instruction": "Da la vuelta usando un plato y cocina 3-4 minutos más" },
+    { "order": 10, "instruction": "Deja reposar 5 minutos antes de servir" }
+  ],
+  "notes": "Tradicionalmente lleva cebolla, pero esta versión la omite para mantenerla baja en FODMAP. Puedes añadir la parte verde de cebolletas si quieres."
+}
+
