@@ -4,18 +4,18 @@ import { getDatabase } from '@/lib/database';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
-  Alert,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  Switch,
-  Text,
-  TextInput,
-  View,
+    Alert,
+    Modal,
+    Platform,
+    Pressable,
+    ScrollView,
+    Switch,
+    Text,
+    TextInput,
+    View,
 } from 'react-native';
 import Animated, {
-  FadeInDown,
+    FadeInDown,
 } from 'react-native-reanimated';
 
 type ThemeOption = 'light' | 'dark' | 'auto';
@@ -42,7 +42,7 @@ export default function SettingsScreen() {
       
       // Gather all data
       const data = {
-        ingredients: await db.getAllAsync('SELECT * FROM ingredients'),
+        foods: await db.getAllAsync('SELECT * FROM foods'),
         recipes: await db.getAllAsync('SELECT * FROM recipes'),
         meals: await db.getAllAsync('SELECT * FROM meals'),
         meal_items: await db.getAllAsync('SELECT * FROM meal_items'),
@@ -105,13 +105,13 @@ export default function SettingsScreen() {
 
       let importedCount = 0;
 
-      // Import ingredients
-      if (data.ingredients && Array.isArray(data.ingredients)) {
-        for (const item of data.ingredients) {
+      // Import foods (alimentos)
+      if (data.foods && Array.isArray(data.foods)) {
+        for (const item of data.foods) {
           await db.runAsync(
-            `INSERT OR REPLACE INTO ingredients (id, name, fodmap_level, category, serving_size, notes, created_at) 
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [item.id, item.name, item.fodmap_level, item.category, item.serving_size, item.notes, item.created_at]
+            `INSERT OR REPLACE INTO foods (id, name, fodmap_level, category, serving_size, notes, source, created_at) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [item.id, item.name, item.fodmap_level, item.category, item.serving_size, item.notes, item.source || 'user', item.created_at]
           );
           importedCount++;
         }
@@ -265,10 +265,12 @@ export default function SettingsScreen() {
               await db.runAsync('DELETE FROM water_intake');
               await db.runAsync('DELETE FROM activity_logs');
               await db.runAsync('DELETE FROM recipe_ingredients');
+              await db.runAsync('DELETE FROM recipe_steps');
               await db.runAsync('DELETE FROM recipe_tags');
               await db.runAsync('DELETE FROM recipes');
-              await db.runAsync('DELETE FROM ingredient_tags');
-              await db.runAsync('DELETE FROM ingredients');
+              await db.runAsync('DELETE FROM food_tags');
+              await db.runAsync('DELETE FROM food_components');
+              await db.runAsync("DELETE FROM foods WHERE source = 'user'"); // Keep internal FODMAP data
               await db.runAsync('DELETE FROM tags');
               await db.runAsync('DELETE FROM folders');
               

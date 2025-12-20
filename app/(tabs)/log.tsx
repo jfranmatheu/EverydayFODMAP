@@ -223,25 +223,26 @@ function MealForm({ colors, onSuccess }: { colors: any; onSuccess: () => void })
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [recipes, setRecipes] = useState<any[]>([]);
-  const [ingredients, setIngredients] = useState<any[]>([]);
+  const [foods, setFoods] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRecipe, setSelectedRecipe] = useState<any>(null);
-  const [selectedIngredients, setSelectedIngredients] = useState<any[]>([]);
+  const [selectedFoods, setSelectedFoods] = useState<any[]>([]);
   const [showSearch, setShowSearch] = useState(false);
 
   React.useEffect(() => {
-    loadRecipesAndIngredients();
+    loadRecipesAndFoods();
   }, []);
 
-  const loadRecipesAndIngredients = async () => {
+  const loadRecipesAndFoods = async () => {
     try {
       const db = await getDatabase();
       const recipesData = await db.getAllAsync('SELECT * FROM recipes ORDER BY name ASC');
-      const ingredientsData = await db.getAllAsync('SELECT * FROM ingredients ORDER BY name ASC');
+      const foodsData = await db.getAllAsync('SELECT * FROM foods ORDER BY name ASC');
       setRecipes(recipesData);
-      setIngredients(ingredientsData);
+      setFoods(foodsData);
+      console.log('[MealForm] Loaded:', recipesData.length, 'recipes,', foodsData.length, 'foods');
     } catch (error) {
-      console.error('Error loading recipes:', error);
+      console.error('Error loading recipes/foods:', error);
     }
   };
 
@@ -249,8 +250,8 @@ function MealForm({ colors, onSuccess }: { colors: any; onSuccess: () => void })
     r.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const filteredIngredients = ingredients.filter(i => 
-    i.name?.toLowerCase().includes(searchQuery.toLowerCase())
+  const filteredFoods = foods.filter(f => 
+    f.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleSelectRecipe = (recipe: any) => {
@@ -260,27 +261,27 @@ function MealForm({ colors, onSuccess }: { colors: any; onSuccess: () => void })
     setSearchQuery('');
   };
 
-  const handleSelectIngredient = (ingredient: any) => {
-    if (!selectedIngredients.find(i => i.id === ingredient.id)) {
-      setSelectedIngredients([...selectedIngredients, ingredient]);
+  const handleSelectFood = (food: any) => {
+    if (!selectedFoods.find(f => f.id === food.id)) {
+      setSelectedFoods([...selectedFoods, food]);
     }
     setSearchQuery('');
   };
 
-  const handleRemoveIngredient = (ingredientId: number) => {
-    setSelectedIngredients(selectedIngredients.filter(i => i.id !== ingredientId));
+  const handleRemoveFood = (foodId: number) => {
+    setSelectedFoods(selectedFoods.filter(f => f.id !== foodId));
   };
 
   const handleSave = async () => {
-    if (!name.trim() && !selectedRecipe && selectedIngredients.length === 0) {
-      Alert.alert('Error', 'Por favor, introduce un nombre o selecciona una receta/ingredientes');
+    if (!name.trim() && !selectedRecipe && selectedFoods.length === 0) {
+      Alert.alert('Error', 'Por favor, introduce un nombre o selecciona una receta/alimento');
       return;
     }
 
     setLoading(true);
     try {
       const now = new Date();
-      const mealName = name.trim() || selectedRecipe?.name || selectedIngredients.map(i => i.name).join(', ');
+      const mealName = name.trim() || selectedRecipe?.name || selectedFoods.map(f => f.name).join(', ');
       
       const mealId = await insertRow('meals', {
         name: mealName,
@@ -290,24 +291,24 @@ function MealForm({ colors, onSuccess }: { colors: any; onSuccess: () => void })
         notes: notes.trim() || null,
       });
 
-      // Add meal items if recipe or ingredients selected
+      // Add meal items if recipe or foods selected
       if (selectedRecipe) {
         await insertRow('meal_items', {
           meal_id: mealId,
           recipe_id: selectedRecipe.id,
-          ingredient_id: null,
+          food_id: null,
           quantity: 1,
           unit: 'porción',
         });
       }
 
-      for (const ingredient of selectedIngredients) {
+      for (const food of selectedFoods) {
         await insertRow('meal_items', {
           meal_id: mealId,
-          ingredient_id: ingredient.id,
+          food_id: food.id,
           recipe_id: null,
           quantity: 1,
-          unit: ingredient.serving_size || 'porción',
+          unit: food.serving_size || 'porción',
         });
       }
 
@@ -332,16 +333,16 @@ function MealForm({ colors, onSuccess }: { colors: any; onSuccess: () => void })
 
   return (
     <View style={{ gap: 16 }}>
-      {/* Recipe/Ingredient Search */}
+      {/* Recipe/Food Search */}
       <Card>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>
-            Buscar receta o ingrediente
+            Buscar receta o alimento
           </Text>
-          {(selectedRecipe || selectedIngredients.length > 0) && (
+          {(selectedRecipe || selectedFoods.length > 0) && (
             <Pressable onPress={() => {
               setSelectedRecipe(null);
-              setSelectedIngredients([]);
+              setSelectedFoods([]);
               setName('');
             }}>
               <Text style={{ fontSize: 12, color: colors.error }}>Limpiar</Text>
@@ -364,7 +365,7 @@ function MealForm({ colors, onSuccess }: { colors: any; onSuccess: () => void })
               setShowSearch(text.length > 0);
             }}
             onFocus={() => setShowSearch(true)}
-            placeholder="Buscar recetas o ingredientes..."
+            placeholder="Buscar recetas o alimentos..."
             placeholderTextColor={colors.textMuted}
             style={{
               flex: 1,
@@ -381,7 +382,7 @@ function MealForm({ colors, onSuccess }: { colors: any; onSuccess: () => void })
         </View>
 
         {/* Search Results */}
-        {showSearch && (searchQuery.length > 0 || recipes.length > 0 || ingredients.length > 0) && (
+        {showSearch && (searchQuery.length > 0 || recipes.length > 0 || foods.length > 0) && (
           <View style={{ marginTop: 12, maxHeight: 200 }}>
             {/* Recipes */}
             {filteredRecipes.length > 0 && (
@@ -415,41 +416,41 @@ function MealForm({ colors, onSuccess }: { colors: any; onSuccess: () => void })
               </>
             )}
 
-            {/* Ingredients */}
-            {filteredIngredients.length > 0 && (
+            {/* Foods (Alimentos) */}
+            {filteredFoods.length > 0 && (
               <>
                 <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textMuted, marginBottom: 6, marginTop: 8 }}>
-                  INGREDIENTES
+                  ALIMENTOS
                 </Text>
-                {filteredIngredients.slice(0, 5).map((ingredient) => (
+                {filteredFoods.slice(0, 5).map((food) => (
                   <Pressable
-                    key={`ingredient-${ingredient.id}`}
-                    onPress={() => handleSelectIngredient(ingredient)}
+                    key={`food-${food.id}`}
+                    onPress={() => handleSelectFood(food)}
                     style={{
                       flexDirection: 'row',
                       alignItems: 'center',
                       padding: 10,
-                      backgroundColor: selectedIngredients.find(i => i.id === ingredient.id) 
+                      backgroundColor: selectedFoods.find(f => f.id === food.id) 
                         ? colors.primary + '20' 
                         : colors.cardElevated,
                       borderRadius: 8,
                       marginBottom: 6,
                     }}
                   >
-                    <Ionicons name="nutrition" size={16} color={getFodmapColor(ingredient.fodmap_level)} style={{ marginRight: 10 }} />
-                    <Text style={{ flex: 1, fontSize: 14, color: colors.text }}>{ingredient.name}</Text>
+                    <Ionicons name="nutrition" size={16} color={getFodmapColor(food.fodmap_level)} style={{ marginRight: 10 }} />
+                    <Text style={{ flex: 1, fontSize: 14, color: colors.text }}>{food.name}</Text>
                     <View style={{
                       width: 8,
                       height: 8,
                       borderRadius: 4,
-                      backgroundColor: getFodmapColor(ingredient.fodmap_level),
+                      backgroundColor: getFodmapColor(food.fodmap_level),
                     }} />
                   </Pressable>
                 ))}
               </>
             )}
 
-            {filteredRecipes.length === 0 && filteredIngredients.length === 0 && searchQuery.length > 0 && (
+            {filteredRecipes.length === 0 && filteredFoods.length === 0 && searchQuery.length > 0 && (
               <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center', padding: 16 }}>
                 No se encontraron resultados
               </Text>
@@ -458,7 +459,7 @@ function MealForm({ colors, onSuccess }: { colors: any; onSuccess: () => void })
         )}
 
         {/* Selected items */}
-        {(selectedRecipe || selectedIngredients.length > 0) && (
+        {(selectedRecipe || selectedFoods.length > 0) && (
           <View style={{ marginTop: 12 }}>
             <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textMuted, marginBottom: 6 }}>
               SELECCIONADOS
@@ -483,23 +484,23 @@ function MealForm({ colors, onSuccess }: { colors: any; onSuccess: () => void })
                 </Pressable>
               </View>
             )}
-            {selectedIngredients.map((ingredient) => (
+            {selectedFoods.map((food) => (
               <View
-                key={`selected-${ingredient.id}`}
+                key={`selected-${food.id}`}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
                   padding: 10,
-                  backgroundColor: getFodmapColor(ingredient.fodmap_level) + '15',
+                  backgroundColor: getFodmapColor(food.fodmap_level) + '15',
                   borderRadius: 8,
                   marginBottom: 6,
                   borderWidth: 1,
-                  borderColor: getFodmapColor(ingredient.fodmap_level) + '30',
+                  borderColor: getFodmapColor(food.fodmap_level) + '30',
                 }}
               >
-                <Ionicons name="nutrition" size={16} color={getFodmapColor(ingredient.fodmap_level)} style={{ marginRight: 10 }} />
-                <Text style={{ flex: 1, fontSize: 14, color: colors.text }}>{ingredient.name}</Text>
-                <Pressable onPress={() => handleRemoveIngredient(ingredient.id)}>
+                <Ionicons name="nutrition" size={16} color={getFodmapColor(food.fodmap_level)} style={{ marginRight: 10 }} />
+                <Text style={{ flex: 1, fontSize: 14, color: colors.text }}>{food.name}</Text>
+                <Pressable onPress={() => handleRemoveFood(food.id)}>
                   <Ionicons name="close-circle" size={20} color={colors.textMuted} />
                 </Pressable>
               </View>
@@ -512,12 +513,12 @@ function MealForm({ colors, onSuccess }: { colors: any; onSuccess: () => void })
       {!selectedRecipe && (
         <Card>
           <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-            Nombre de la comida {selectedIngredients.length > 0 ? '(opcional)' : ''}
+            Nombre de la comida {selectedFoods.length > 0 ? '(opcional)' : ''}
           </Text>
           <TextInput
             value={name}
             onChangeText={setName}
-            placeholder={selectedIngredients.length > 0 ? 'Se usarán los ingredientes seleccionados' : 'Ej: Ensalada de pollo'}
+            placeholder={selectedFoods.length > 0 ? 'Se usarán los alimentos seleccionados' : 'Ej: Ensalada de pollo'}
             placeholderTextColor={colors.textMuted}
             style={{
               fontSize: 16,

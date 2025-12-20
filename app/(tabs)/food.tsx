@@ -2,7 +2,7 @@ import { Card, FODMAPBadge } from '@/components/ui';
 import { useDatabase } from '@/contexts/DatabaseContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getDatabase } from '@/lib/database';
-import { FODMAPLevel, Ingredient, Recipe } from '@/lib/types';
+import { FODMAPLevel, Food, Recipe } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
@@ -20,17 +20,17 @@ import Animated, {
     Layout,
 } from 'react-native-reanimated';
 
-type TabType = 'ingredients' | 'recipes';
+type TabType = 'foods' | 'recipes';
 type FilterLevel = FODMAPLevel | 'all';
 
 export default function FoodScreen() {
   const { colors } = useTheme();
   const { isReady } = useDatabase();
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<TabType>('ingredients');
+  const [activeTab, setActiveTab] = useState<TabType>('foods');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterLevel, setFilterLevel] = useState<FilterLevel>('all');
-  const [ingredients, setIngredients] = useState<Ingredient[]>([]);
+  const [foods, setFoods] = useState<Food[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -46,13 +46,15 @@ export default function FoodScreen() {
     try {
       const db = await getDatabase();
       
-      // Load ingredients
-      const ingredientsData = await db.getAllAsync<Ingredient>('SELECT * FROM ingredients ORDER BY name ASC');
-      setIngredients(ingredientsData);
+      // Load foods (alimentos) from the foods table
+      const foodsData = await db.getAllAsync('SELECT * FROM foods ORDER BY name ASC');
+      setFoods(foodsData as Food[]);
       
       // Load recipes
-      const recipesData = await db.getAllAsync<Recipe>('SELECT * FROM recipes ORDER BY name ASC');
-      setRecipes(recipesData);
+      const recipesData = await db.getAllAsync('SELECT * FROM recipes ORDER BY name ASC');
+      setRecipes(recipesData as Recipe[]);
+      
+      console.log('[FoodScreen] Loaded:', foodsData.length, 'foods,', recipesData.length, 'recipes');
     } catch (error) {
       console.error('Error loading data:', error);
     }
@@ -64,7 +66,7 @@ export default function FoodScreen() {
     setRefreshing(false);
   };
 
-  const filteredIngredients = ingredients.filter(item => {
+  const filteredFoods = foods.filter(item => {
     const matchesSearch = item.name.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = filterLevel === 'all' || item.fodmap_level === filterLevel;
     return matchesSearch && matchesFilter;
@@ -123,13 +125,13 @@ export default function FoodScreen() {
     </Pressable>
   );
 
-  const IngredientItem = ({ item, index }: { item: Ingredient; index: number }) => (
+  const FoodItem = ({ item, index }: { item: Food; index: number }) => (
     <Animated.View 
       entering={FadeInRight.delay(index * 30).springify()}
       layout={Layout.springify()}
     >
       <Card 
-        onPress={() => router.push(`/ingredient/${item.id}`)}
+        onPress={() => router.push(`/food/${item.id}`)}
         style={{ marginBottom: 10 }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -142,11 +144,30 @@ export default function FoodScreen() {
             }}>
               {item.name}
             </Text>
-            {item.serving_size && (
-              <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                Porción: {item.serving_size}
-              </Text>
-            )}
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              {item.category && (
+                <Text style={{ fontSize: 12, color: colors.textMuted, textTransform: 'capitalize' }}>
+                  {item.category}
+                </Text>
+              )}
+              {item.serving_size && (
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                  • {item.serving_size}
+                </Text>
+              )}
+              {item.source === 'internal' && (
+                <View style={{ 
+                  backgroundColor: colors.primary + '20', 
+                  paddingHorizontal: 6, 
+                  paddingVertical: 2, 
+                  borderRadius: 4 
+                }}>
+                  <Text style={{ fontSize: 10, color: colors.primary, fontWeight: '600' }}>
+                    FODMAP
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
           <FODMAPBadge level={item.fodmap_level} />
         </View>
@@ -174,7 +195,7 @@ export default function FoodScreen() {
               {item.name}
             </Text>
             <View style={{ flexDirection: 'row', gap: 12 }}>
-              {item.prep_time && (
+              {item.prep_time != null && (
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
                   <Ionicons name="time-outline" size={14} color={colors.textSecondary} />
                   <Text style={{ fontSize: 12, color: colors.textSecondary }}>
@@ -190,6 +211,18 @@ export default function FoodScreen() {
                   </Text>
                 </View>
               )}
+              {item.source === 'internal' && (
+                <View style={{ 
+                  backgroundColor: colors.primary + '20', 
+                  paddingHorizontal: 6, 
+                  paddingVertical: 2, 
+                  borderRadius: 4 
+                }}>
+                  <Text style={{ fontSize: 10, color: colors.primary, fontWeight: '600' }}>
+                    FODMAP
+                  </Text>
+                </View>
+              )}
             </View>
           </View>
           <FODMAPBadge level={item.fodmap_level} />
@@ -198,10 +231,10 @@ export default function FoodScreen() {
     </Animated.View>
   );
 
-  const EmptyState = ({ type }: { type: 'ingredients' | 'recipes' }) => (
+  const EmptyState = ({ type }: { type: 'foods' | 'recipes' }) => (
     <View style={{ alignItems: 'center', paddingVertical: 48 }}>
       <Ionicons 
-        name={type === 'ingredients' ? 'nutrition-outline' : 'book-outline'} 
+        name={type === 'foods' ? 'nutrition-outline' : 'book-outline'} 
         size={64} 
         color={colors.textMuted} 
         style={{ marginBottom: 16 }}
@@ -212,7 +245,7 @@ export default function FoodScreen() {
         color: colors.textSecondary,
         marginBottom: 8,
       }}>
-        No hay {type === 'ingredients' ? 'ingredientes' : 'recetas'}
+        No hay {type === 'foods' ? 'alimentos' : 'recetas'}
       </Text>
       <Text style={{ 
         fontSize: 14, 
@@ -222,7 +255,7 @@ export default function FoodScreen() {
       }}>
         {searchQuery 
           ? 'No se encontraron resultados para tu búsqueda'
-          : `Añade tu primer${type === 'ingredients' ? ' ingrediente' : 'a receta'} para empezar`
+          : `Añade tu primer${type === 'foods' ? ' alimento' : 'a receta'} para empezar`
         }
       </Text>
     </View>
@@ -246,7 +279,7 @@ export default function FoodScreen() {
         }}>
           <Ionicons name="search" size={20} color={colors.textMuted} />
           <TextInput
-            placeholder="Buscar..."
+            placeholder="Buscar alimentos o recetas..."
             placeholderTextColor={colors.textMuted}
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -274,7 +307,7 @@ export default function FoodScreen() {
         borderBottomWidth: 1,
         borderBottomColor: colors.border,
       }}>
-        <TabButton tab="ingredients" label="Ingredientes" />
+        <TabButton tab="foods" label="Alimentos" />
         <TabButton tab="recipes" label="Recetas" />
       </View>
 
@@ -305,13 +338,13 @@ export default function FoodScreen() {
           />
         }
       >
-        {activeTab === 'ingredients' ? (
-          filteredIngredients.length > 0 ? (
-            filteredIngredients.map((item, index) => (
-              <IngredientItem key={item.id} item={item} index={index} />
+        {activeTab === 'foods' ? (
+          filteredFoods.length > 0 ? (
+            filteredFoods.map((item, index) => (
+              <FoodItem key={item.id} item={item} index={index} />
             ))
           ) : (
-            <EmptyState type="ingredients" />
+            <EmptyState type="foods" />
           )
         ) : (
           filteredRecipes.length > 0 ? (
@@ -334,7 +367,7 @@ export default function FoodScreen() {
         }}
       >
         <Pressable
-          onPress={() => router.push(activeTab === 'ingredients' ? '/ingredient/new' : '/recipe/new')}
+          onPress={() => router.push(activeTab === 'foods' ? '/food/new' : '/recipe/new')}
           style={{
             width: 56,
             height: 56,
@@ -355,4 +388,3 @@ export default function FoodScreen() {
     </View>
   );
 }
-

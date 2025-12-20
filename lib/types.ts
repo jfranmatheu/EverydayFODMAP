@@ -177,6 +177,9 @@ export interface Food {
   updated_at?: string;
 }
 
+// Alias for backwards compatibility
+export type Ingredient = Food;
+
 // Component of a compound food
 export interface FoodComponent {
   food_id: number;
