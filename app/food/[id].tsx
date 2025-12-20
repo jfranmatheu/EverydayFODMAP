@@ -46,6 +46,7 @@ export default function FoodScreen() {
   const [name, setName] = useState('');
   const [category, setCategory] = useState<FoodCategory>('other');
   const [servingSize, setServingSize] = useState('');
+  const [servingUnit, setServingUnit] = useState('g');
   const [notes, setNotes] = useState('');
   const [brand, setBrand] = useState('');
   
@@ -117,7 +118,18 @@ export default function FoodScreen() {
         setName(food.name);
         setCategory(food.category || 'other');
         setFodmapLevel(food.fodmap_level);
-        setServingSize(food.serving_size || '');
+        
+        // Parse serving size (format: "100 g" or "100g")
+        if (food.serving_size) {
+          const match = food.serving_size.match(/^([\d.,]+)\s*(.*)$/);
+          if (match) {
+            setServingSize(match[1]);
+            setServingUnit(match[2] || 'g');
+          } else {
+            setServingSize(food.serving_size);
+          }
+        }
+        
         setNotes(food.notes || '');
         setBrand(food.brand || '');
         setImageUri(food.image_uri || null);
@@ -204,7 +216,7 @@ export default function FoodScreen() {
         category,
         fodmap_level: fodmapLevel,
         fodmap_details: fullFodmapDetails ? JSON.stringify(fullFodmapDetails) : null,
-        serving_size: servingSize.trim() || null,
+        serving_size: servingSize.trim() ? `${servingSize.trim()} ${servingUnit}` : null,
         notes: notes.trim() || null,
         brand: brand.trim() || null,
         nutrition: showNutrition && Object.keys(nutrition).length > 0 
@@ -687,21 +699,55 @@ export default function FoodScreen() {
                   <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
                     Tamaño de porción
                   </Text>
-                  <TextInput
-                    value={servingSize}
-                    onChangeText={setServingSize}
-                    placeholder="Ej: 100g, 1 taza, 1 unidad..."
-                    placeholderTextColor={colors.textMuted}
-                    editable={!isInternal}
-                    style={{
-                      fontSize: 16,
-                      color: colors.text,
-                      padding: 12,
-                      backgroundColor: colors.cardElevated,
-                      borderRadius: 10,
-                      opacity: isInternal ? 0.7 : 1,
-                    }}
-                  />
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TextInput
+                      value={servingSize}
+                      onChangeText={setServingSize}
+                      placeholder="100"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="numeric"
+                      editable={!isInternal}
+                      style={{
+                        flex: 1,
+                        fontSize: 16,
+                        color: colors.text,
+                        padding: 12,
+                        backgroundColor: colors.cardElevated,
+                        borderRadius: 10,
+                        opacity: isInternal ? 0.7 : 1,
+                        textAlign: 'center',
+                      }}
+                    />
+                    <View style={{ flex: 1 }}>
+                      <ScrollView 
+                        horizontal 
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={{ gap: 6 }}
+                      >
+                        {['g', 'ml', 'unidad', 'taza', 'cdta', 'cda', 'puñado'].map(unit => (
+                          <Pressable
+                            key={unit}
+                            onPress={() => !isInternal && setServingUnit(unit)}
+                            style={{
+                              paddingHorizontal: 12,
+                              paddingVertical: 10,
+                              borderRadius: 8,
+                              backgroundColor: servingUnit === unit ? colors.primary : colors.cardElevated,
+                              opacity: isInternal ? 0.7 : 1,
+                            }}
+                          >
+                            <Text style={{
+                              fontSize: 13,
+                              fontWeight: '600',
+                              color: servingUnit === unit ? '#FFFFFF' : colors.textSecondary,
+                            }}>
+                              {unit}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </ScrollView>
+                    </View>
+                  </View>
                 </Card>
               </Animated.View>
 
