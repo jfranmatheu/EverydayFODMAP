@@ -700,26 +700,53 @@ export async function initDatabase(): Promise<void> {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Treatments table
+    -- Treatments table (expanded for chronic/periodic treatments)
     CREATE TABLE IF NOT EXISTS treatments (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
-      dosage TEXT,
-      frequency TEXT,
-      time_of_day TEXT,
+      type TEXT DEFAULT 'medication',
+      -- Dosage
+      dosage_amount REAL,
+      dosage_unit TEXT,
+      -- Frequency
+      frequency TEXT DEFAULT 'once_daily',
+      frequency_value TEXT,
+      doses TEXT, -- JSON array of TreatmentDose objects
+      -- Schedule
+      start_date TEXT,
+      end_date TEXT,
+      is_chronic INTEGER DEFAULT 0,
+      specific_days TEXT,
+      -- Reminders
+      reminder_enabled INTEGER DEFAULT 0,
+      reminder_minutes_before INTEGER DEFAULT 15,
+      -- Additional info
+      instructions TEXT,
+      side_effects TEXT,
+      prescribing_doctor TEXT,
+      pharmacy TEXT,
+      refill_reminder_enabled INTEGER DEFAULT 0,
+      refill_reminder_days INTEGER,
+      current_stock INTEGER,
       notes TEXT,
       is_active INTEGER DEFAULT 1,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
-    -- Treatment logs table
+    -- Treatment logs table (expanded)
     CREATE TABLE IF NOT EXISTS treatment_logs (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       treatment_id INTEGER REFERENCES treatments(id) ON DELETE CASCADE,
       treatment_name TEXT,
+      scheduled_time TEXT,
+      dose_index INTEGER,
       date TEXT NOT NULL,
       time TEXT NOT NULL,
       taken INTEGER DEFAULT 1,
+      skipped INTEGER DEFAULT 0,
+      skip_reason TEXT,
+      amount_taken REAL,
+      unit TEXT,
       notes TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );

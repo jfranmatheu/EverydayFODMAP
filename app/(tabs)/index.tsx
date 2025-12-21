@@ -399,7 +399,7 @@ export default function HomeScreen() {
                 Registra tus comidas y síntomas regularmente para identificar qué alimentos pueden estar causando molestias.
               </Text>
             </View>
-          </View>
+    </View>
         </Card>
       </Animated.View>
     </ScrollView>
@@ -449,14 +449,14 @@ function StatQuickActionCard({
           height: 40,
           borderRadius: 20,
           backgroundColor: action.color + '20',
-          alignItems: 'center',
-          justifyContent: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
           marginBottom: 6,
         }}>
           <Ionicons name={action.icon} size={20} color={action.color} />
         </View>
         <Text style={{ 
-          fontSize: 20, 
+    fontSize: 20,
           fontWeight: '700', 
           color: action.color,
           marginBottom: 2,

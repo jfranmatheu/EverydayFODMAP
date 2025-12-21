@@ -1,8 +1,16 @@
 import { Button, Card } from '@/components/ui';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getDatabase } from '@/lib/database';
+import {
+    cancelAllNotifications,
+    checkNotificationPermissions,
+    getScheduledNotificationsList,
+    requestNotificationPermissions,
+    syncAllTreatmentNotifications,
+    testNotification
+} from '@/lib/notifications';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     Alert,
     Modal,
@@ -22,12 +30,56 @@ type ThemeOption = 'light' | 'dark' | 'auto';
 
 export default function SettingsScreen() {
   const { colors, themeMode, setThemeMode } = useTheme();
-  const [notifications, setNotifications] = useState(true);
+  const [notifications, setNotifications] = useState(false);
+  const [notificationCount, setNotificationCount] = useState(0);
   const [externalRecipes, setExternalRecipes] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
   const [importData, setImportData] = useState('');
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
+
+  // Check notification permission on mount
+  useEffect(() => {
+    checkNotificationPermissions().then(hasPermission => {
+      setNotifications(hasPermission);
+    });
+    loadScheduledNotifications();
+  }, []);
+
+  const loadScheduledNotifications = async () => {
+    const scheduled = await getScheduledNotificationsList();
+    setNotificationCount(scheduled.length);
+  };
+
+  const handleToggleNotifications = async (value: boolean) => {
+    if (value) {
+      const granted = await requestNotificationPermissions();
+      setNotifications(granted);
+      if (granted) {
+        // Sync all treatment notifications
+        await syncAllTreatmentNotifications();
+        await loadScheduledNotifications();
+        Alert.alert('Activado', 'Las notificaciones están activadas. Se sincronizarán los recordatorios de tratamientos.');
+      } else {
+        Alert.alert('Permiso denegado', 'No se pudo activar las notificaciones. Por favor, actívalas desde la configuración del dispositivo.');
+      }
+    } else {
+      await cancelAllNotifications();
+      setNotificationCount(0);
+      setNotifications(false);
+      Alert.alert('Desactivado', 'Se han cancelado todas las notificaciones programadas.');
+    }
+  };
+
+  const handleTestNotification = async () => {
+    await testNotification();
+  };
+
+  const handleSyncNotifications = async () => {
+    await syncAllTreatmentNotifications();
+    await loadScheduledNotifications();
+    Alert.alert('Sincronizado', 'Se han reprogramado las notificaciones de todos los tratamientos activos.');
+  };
 
   const themeOptions: { id: ThemeOption; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
     { id: 'light', label: 'Claro', icon: 'sunny' },
@@ -413,16 +465,83 @@ export default function SettingsScreen() {
             <SettingRow 
               icon="notifications"
               label="Notificaciones"
-              subtitle="Recibe recordatorios para registrar comidas y tratamientos"
+              subtitle={notifications 
+                ? `Activadas · ${notificationCount} recordatorio${notificationCount !== 1 ? 's' : ''} programado${notificationCount !== 1 ? 's' : ''}`
+                : 'Recibe recordatorios para tratamientos'
+              }
               rightElement={
                 <Switch
                   value={notifications}
-                  onValueChange={setNotifications}
+                  onValueChange={handleToggleNotifications}
                   trackColor={{ false: colors.border, true: colors.primary + '60' }}
                   thumbColor={notifications ? colors.primary : colors.textMuted}
                 />
               }
             />
+            
+            {notifications && (
+              <>
+                <View style={{ height: 1, backgroundColor: colors.border, marginVertical: 12 }} />
+                
+                <Pressable
+                  onPress={handleSyncNotifications}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 8,
+                    gap: 12,
+                  }}
+                >
+                  <View style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: colors.primary + '15',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <Ionicons name="sync" size={18} color={colors.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>
+                      Sincronizar recordatorios
+                    </Text>
+                    <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                      Reprograma las notificaciones de tratamientos
+                    </Text>
+                  </View>
+                </Pressable>
+                
+                <Pressable
+                  onPress={handleTestNotification}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 8,
+                    gap: 12,
+                  }}
+                >
+                  <View style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: colors.success + '15',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <Ionicons name="flask" size={18} color={colors.success} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>
+                      Probar notificación
+                    </Text>
+                    <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                      Envía una notificación de prueba
+                    </Text>
+                  </View>
+                </Pressable>
+              </>
+            )}
           </Card>
         </Animated.View>
 

@@ -391,12 +391,73 @@ export interface BowelMovement {
 // TREATMENTS
 // ============================================================
 
+export type TreatmentType = 'medication' | 'supplement' | 'probiotic' | 'enzyme' | 'other';
+
+export const TREATMENT_TYPES: Record<TreatmentType, { label: string; icon: string }> = {
+  medication: { label: 'Medicamento', icon: 'medkit' },
+  supplement: { label: 'Suplemento', icon: 'fitness' },
+  probiotic: { label: 'Probiótico', icon: 'leaf' },
+  enzyme: { label: 'Enzima digestiva', icon: 'flask' },
+  other: { label: 'Otro', icon: 'ellipse' },
+};
+
+export type DosageUnit = 'mg' | 'g' | 'ml' | 'gotas' | 'comprimidos' | 'cápsulas' | 'sobres' | 'cucharadas' | 'unidades';
+
+export const DOSAGE_UNITS: DosageUnit[] = ['mg', 'g', 'ml', 'gotas', 'comprimidos', 'cápsulas', 'sobres', 'cucharadas', 'unidades'];
+
+export type TreatmentFrequency = 'as_needed' | 'once_daily' | 'twice_daily' | 'three_times_daily' | 'four_times_daily' | 'every_x_hours' | 'specific_times' | 'with_meals' | 'before_meals' | 'after_meals' | 'weekly' | 'custom';
+
+export const TREATMENT_FREQUENCY_LABELS: Record<TreatmentFrequency, string> = {
+  as_needed: 'Según necesidad',
+  once_daily: 'Una vez al día',
+  twice_daily: 'Dos veces al día',
+  three_times_daily: 'Tres veces al día',
+  four_times_daily: 'Cuatro veces al día',
+  every_x_hours: 'Cada X horas',
+  specific_times: 'Horarios específicos',
+  with_meals: 'Con las comidas',
+  before_meals: 'Antes de comer',
+  after_meals: 'Después de comer',
+  weekly: 'Semanal',
+  custom: 'Personalizado',
+};
+
+export interface TreatmentDose {
+  time: string; // HH:MM format
+  amount: number;
+  unit: DosageUnit;
+  notes?: string;
+  with_food?: boolean;
+}
+
 export interface Treatment {
   id: number;
   name: string;
-  dosage?: string;
-  frequency?: string;
-  time_of_day?: string;
+  type: TreatmentType;
+  // Dosage configuration
+  dosage_amount?: number;
+  dosage_unit?: DosageUnit;
+  // Frequency configuration
+  frequency: TreatmentFrequency;
+  frequency_value?: string; // e.g., "8" for every 8 hours, or JSON for specific times
+  doses?: TreatmentDose[]; // Array of daily doses
+  // Schedule
+  start_date?: string;
+  end_date?: string; // null = chronic/indefinite
+  is_chronic: boolean;
+  // Days configuration (for weekly or specific days)
+  specific_days?: string; // comma-separated day indices (0-6)
+  // Reminders
+  reminder_enabled: boolean;
+  reminder_minutes_before?: number; // minutes before each dose
+  // Additional info
+  instructions?: string; // e.g., "Take with water", "Avoid dairy"
+  side_effects?: string;
+  prescribing_doctor?: string;
+  pharmacy?: string;
+  refill_reminder_enabled?: boolean;
+  refill_reminder_days?: number; // days before running out
+  current_stock?: number;
   notes?: string;
   is_active: boolean;
   created_at: string;
@@ -406,9 +467,15 @@ export interface TreatmentLog {
   id: number;
   treatment_id: number;
   treatment_name?: string;
+  scheduled_time?: string; // The time it was supposed to be taken
+  dose_index?: number; // Which dose of the day (0, 1, 2...)
   date: string;
-  time: string;
+  time: string; // Actual time taken
   taken: boolean;
+  skipped: boolean;
+  skip_reason?: string;
+  amount_taken?: number;
+  unit?: DosageUnit;
   notes?: string;
   created_at: string;
 }
