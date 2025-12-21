@@ -6,6 +6,8 @@ import {
   Pressable,
   TextInput,
   Alert,
+  Modal,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -16,7 +18,19 @@ import Animated, {
 import { useTheme } from '@/contexts/ThemeContext';
 import { Card, Button } from '@/components/ui';
 import { insertRow, getDatabase } from '@/lib/database';
-import { SYMPTOM_TYPES, BRISTOL_SCALE, BristolType, MEAL_TYPE_LABELS, MealType, ActivityType, INTENSITY_LABELS } from '@/lib/types';
+import { 
+  SYMPTOM_TYPES, 
+  BRISTOL_SCALE, 
+  BristolType, 
+  MEAL_TYPE_LABELS, 
+  MealType, 
+  ActivityType, 
+  INTENSITY_LABELS,
+  Treatment,
+  TreatmentLog,
+  ScheduledActivity,
+  ActivityLog,
+} from '@/lib/types';
 
 type LogType = 'meal' | 'water' | 'symptom' | 'bowel' | 'treatment' | 'activity';
 
@@ -882,26 +896,74 @@ function BowelForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }
   );
 }
 
-// Treatment Form (simplified - direct quick entry)
+// Treatment Form - Two blocks: My treatments + Quick entry
 function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }) {
   const router = useRouter();
+  const today = new Date().toISOString().split('T')[0];
   
-  // Quick entry fields
+  // Data
+  const [treatments, setTreatments] = useState<Treatment[]>([]);
+  const [todayLogs, setTodayLogs] = useState<TreatmentLog[]>([]);
+  const [loadingTreatments, setLoadingTreatments] = useState(true);
+  
+  // Quick entry modal
+  const [showQuickModal, setShowQuickModal] = useState(false);
   const [quickName, setQuickName] = useState('');
   const [dosageAmount, setDosageAmount] = useState('');
   const [dosageUnit, setDosageUnit] = useState('mg');
-  
-  // Timestamp fields
   const [useCurrentTime, setUseCurrentTime] = useState(true);
-  const [customDate, setCustomDate] = useState(new Date().toISOString().split('T')[0]);
+  const [customDate, setCustomDate] = useState(today);
   const [customTime, setCustomTime] = useState(new Date().toTimeString().slice(0, 5));
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
 
   const DOSAGE_UNITS = ['mg', 'g', 'ml', 'gotas', 'comprimido', 'cápsula', 'cucharada', 'sobre'];
 
+  React.useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const db = await getDatabase();
+      const [treatmentsData, logsData] = await Promise.all([
+        db.getAllAsync<Treatment>('SELECT * FROM treatments WHERE is_active = 1 ORDER BY name'),
+        db.getAllAsync<TreatmentLog>(`SELECT * FROM treatment_logs WHERE date = ? ORDER BY time DESC`, [today])
+      ]);
+      setTreatments(treatmentsData);
+      setTodayLogs(logsData);
+    } catch (error) {
+      console.error('Error loading treatments:', error);
+    } finally {
+      setLoadingTreatments(false);
+    }
+  };
+
+  const handleQuickLogTreatment = async (treatment: Treatment) => {
+    setLoading(true);
+    try {
+      const now = new Date();
+      await insertRow('treatment_logs', {
+        treatment_id: treatment.id,
+        treatment_name: treatment.name,
+        date: now.toISOString().split('T')[0],
+        time: now.toTimeString().slice(0, 5),
+        taken: 1,
+        skipped: 0,
+        amount_taken: treatment.dosage_amount,
+        unit: treatment.dosage_unit,
+      });
+      Alert.alert('¡Guardado!', `Toma de ${treatment.name} registrada`);
+      loadData();
+      onSuccess();
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo registrar la toma');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleSaveQuickEntry = async () => {
-    // Validation for quick entry
     if (!quickName.trim()) {
       Alert.alert('Error', 'Por favor, introduce el nombre del tratamiento');
       return;
@@ -910,8 +972,6 @@ function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => vo
     setLoading(true);
     try {
       const db = await getDatabase();
-      
-      // Determine date/time
       const now = new Date();
       const logDate = useCurrentTime ? now.toISOString().split('T')[0] : customDate;
       const logTime = useCurrentTime ? now.toTimeString().slice(0, 5) : customTime;
@@ -933,12 +993,9 @@ function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => vo
         treatmentId = result.lastInsertRowId;
       }
 
-      // Log the treatment
       await insertRow('treatment_logs', {
         treatment_id: treatmentId,
         treatment_name: quickName.trim(),
-        scheduled_time: null,
-        dose_index: null,
         date: logDate,
         time: logTime,
         taken: 1,
@@ -949,354 +1006,576 @@ function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => vo
       });
 
       Alert.alert('¡Guardado!', `Toma de ${quickName.trim()} registrada`);
+      setShowQuickModal(false);
+      resetQuickForm();
+      loadData();
       onSuccess();
     } catch (error) {
-      console.error('Error saving treatment:', error);
       Alert.alert('Error', 'No se pudo guardar el registro');
     } finally {
       setLoading(false);
     }
   };
 
+  const resetQuickForm = () => {
+    setQuickName('');
+    setDosageAmount('');
+    setDosageUnit('mg');
+    setUseCurrentTime(true);
+    setNotes('');
+  };
+
+  const getTodayLogsForTreatment = (treatmentId: number) => {
+    return todayLogs.filter(log => log.treatment_id === treatmentId);
+  };
+
   return (
-    <View style={{ gap: 16 }}>
-      {/* Header: Manage treatments button */}
-      <Pressable
-        onPress={() => router.push('/treatment')}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: 14,
-          backgroundColor: colors.treatment + '15',
-          borderRadius: 12,
-          borderWidth: 1,
-          borderColor: colors.treatment + '30',
-        }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Ionicons name="medical" size={20} color={colors.treatment} />
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.treatment }}>
-            Gestionar mis tratamientos
-          </Text>
-        </View>
-        <Ionicons name="chevron-forward" size={18} color={colors.treatment} />
-      </Pressable>
-
-      {/* Title */}
-      <View style={{ marginTop: 4 }}>
-        <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text }}>
-          Registrar Toma Puntual
-        </Text>
-        <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: 4 }}>
-          Registra una toma de medicamento o suplemento
-        </Text>
-      </View>
-
-      {/* Treatment name */}
-          <Card>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
-              Datos del medicamento
-            </Text>
-            
-            <View style={{ marginBottom: 16 }}>
-              <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 6 }}>
-                Nombre del medicamento / suplemento
-              </Text>
-              <TextInput
-                value={quickName}
-                onChangeText={setQuickName}
-                placeholder="Ej: Ibuprofeno, Omeprazol, Vitamina D..."
-                placeholderTextColor={colors.textMuted}
-                style={{
-                  fontSize: 16,
-                  color: colors.text,
-                  padding: 14,
-                  backgroundColor: colors.cardElevated,
-                  borderRadius: 12,
-                }}
-              />
+    <View style={{ gap: 20 }}>
+      {/* BLOCK 1: My Treatments */}
+      <View style={{
+        backgroundColor: colors.card,
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+      }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              backgroundColor: colors.treatment + '20',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <Ionicons name="medical" size={20} color={colors.treatment} />
             </View>
-
-            {/* Dosage amount + unit */}
             <View>
-              <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 6 }}>
-                Dosis tomada (opcional)
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>
+                Mis Tratamientos
               </Text>
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <TextInput
-                  value={dosageAmount}
-                  onChangeText={setDosageAmount}
-                  placeholder="0"
-                  placeholderTextColor={colors.textMuted}
-                  keyboardType="numeric"
-                  style={{
-                    width: 80,
-                    fontSize: 20,
-                    fontWeight: '700',
-                    color: colors.text,
-                    padding: 14,
-                    backgroundColor: colors.cardElevated,
-                    borderRadius: 12,
-                    textAlign: 'center',
-                  }}
-                />
-                <ScrollView 
-                  horizontal 
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={{ gap: 6 }}
-                >
-                  {DOSAGE_UNITS.map(unit => (
-                    <Pressable
-                      key={unit}
-                      onPress={() => setDosageUnit(unit)}
-                      style={{
-                        paddingHorizontal: 14,
-                        paddingVertical: 14,
-                        borderRadius: 12,
-                        backgroundColor: dosageUnit === unit ? colors.treatment : colors.cardElevated,
-                      }}
-                    >
-                      <Text style={{
-                        fontSize: 14,
-                        fontWeight: '600',
-                        color: dosageUnit === unit ? '#FFFFFF' : colors.textSecondary,
-                      }}>
-                        {unit}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </ScrollView>
-              </View>
-            </View>
-          </Card>
-
-          {/* Timestamp */}
-          <Card>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
-              ¿Cuándo tomaste la dosis?
-            </Text>
-            
-            {/* Quick options */}
-            <View style={{ flexDirection: 'row', gap: 8, marginBottom: useCurrentTime ? 0 : 14 }}>
-              <Pressable
-                onPress={() => setUseCurrentTime(true)}
-                style={{
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                  padding: 14,
-                  borderRadius: 12,
-                  backgroundColor: useCurrentTime ? colors.treatment : colors.cardElevated,
-                }}
-              >
-                <Ionicons 
-                  name="time" 
-                  size={18} 
-                  color={useCurrentTime ? '#FFFFFF' : colors.textSecondary} 
-                />
-                <Text style={{
-                  fontSize: 14,
-                  fontWeight: '600',
-                  color: useCurrentTime ? '#FFFFFF' : colors.textSecondary,
-                }}>
-                  Ahora mismo
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setUseCurrentTime(false)}
-                style={{
-                  flex: 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  gap: 8,
-                  padding: 14,
-                  borderRadius: 12,
-                  backgroundColor: !useCurrentTime ? colors.treatment : colors.cardElevated,
-                }}
-              >
-                <Ionicons 
-                  name="calendar" 
-                  size={18} 
-                  color={!useCurrentTime ? '#FFFFFF' : colors.textSecondary} 
-                />
-                <Text style={{
-                  fontSize: 14,
-                  fontWeight: '600',
-                  color: !useCurrentTime ? '#FFFFFF' : colors.textSecondary,
-                }}>
-                  Otra hora
-                </Text>
-              </Pressable>
-            </View>
-
-            {/* Custom date/time inputs */}
-            {!useCurrentTime && (
-              <View style={{ flexDirection: 'row', gap: 10 }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>
-                    Fecha
-                  </Text>
-                  <TextInput
-                    value={customDate}
-                    onChangeText={setCustomDate}
-                    placeholder="YYYY-MM-DD"
-                    placeholderTextColor={colors.textMuted}
-                    style={{
-                      fontSize: 15,
-                      color: colors.text,
-                      padding: 12,
-                      backgroundColor: colors.cardElevated,
-                      borderRadius: 10,
-                      textAlign: 'center',
-                    }}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>
-                    Hora
-                  </Text>
-                  <TextInput
-                    value={customTime}
-                    onChangeText={setCustomTime}
-                    placeholder="HH:MM"
-                    placeholderTextColor={colors.textMuted}
-                    style={{
-                      fontSize: 15,
-                      color: colors.text,
-                      padding: 12,
-                      backgroundColor: colors.cardElevated,
-                      borderRadius: 10,
-                      textAlign: 'center',
-                    }}
-                  />
-                </View>
-              </View>
-            )}
-          </Card>
-
-          {/* Notes */}
-          <Card>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-              Notas (opcional)
-            </Text>
-            <TextInput
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="Efectos, motivo de la toma, observaciones..."
-              placeholderTextColor={colors.textMuted}
-              multiline
-              numberOfLines={2}
-              style={{
-                fontSize: 15,
-                color: colors.text,
-                padding: 12,
-                backgroundColor: colors.cardElevated,
-                borderRadius: 10,
-                minHeight: 60,
-                textAlignVertical: 'top',
-              }}
-            />
-          </Card>
-
-          {/* Summary & Save */}
-          <View style={{ 
-            backgroundColor: colors.treatment + '10', 
-            borderRadius: 14, 
-            padding: 16, 
-            borderWidth: 1,
-            borderColor: colors.treatment + '20',
-          }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              <Ionicons name="checkmark-circle" size={22} color={colors.treatment} />
-              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
-                Resumen del registro
-              </Text>
-            </View>
-            <View style={{ gap: 6 }}>
-              <Text style={{ fontSize: 14, color: colors.text }}>
-                <Text style={{ fontWeight: '700' }}>
-                  {quickName.trim() || 'Sin nombre'}
-                </Text>
-                {dosageAmount.trim() && (
-                  <Text style={{ color: colors.textSecondary }}>
-                    {' '}· {dosageAmount} {dosageUnit}
-                  </Text>
-                )}
-              </Text>
-              <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                <Ionicons name="time-outline" size={12} color={colors.textMuted} />
-                {'  '}
-                {useCurrentTime 
-                  ? 'Ahora mismo' 
-                  : `${customDate} a las ${customTime}`}
+              <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                Registra tomas de tus tratamientos activos
               </Text>
             </View>
           </View>
+        </View>
 
-          <Button 
-            onPress={handleSaveQuickEntry} 
-            loading={loading} 
-            fullWidth 
-            size="lg"
-            disabled={!quickName.trim()}
-            style={{ marginTop: 4 }}
-          >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-              <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
-                Registrar toma
-              </Text>
+        {/* Today's quick log for each treatment */}
+        {loadingTreatments ? (
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <ActivityIndicator color={colors.treatment} />
+          </View>
+        ) : treatments.length === 0 ? (
+          <View style={{ 
+            padding: 24, 
+            alignItems: 'center', 
+            backgroundColor: colors.cardElevated,
+            borderRadius: 12,
+          }}>
+            <Ionicons name="medical-outline" size={32} color={colors.textMuted} />
+            <Text style={{ fontSize: 14, color: colors.textMuted, marginTop: 8, textAlign: 'center' }}>
+              No tienes tratamientos activos
+            </Text>
+          </View>
+        ) : (
+          <View style={{ gap: 8 }}>
+            {treatments.slice(0, 5).map((treatment) => {
+              const logsToday = getTodayLogsForTreatment(treatment.id);
+              return (
+                <View 
+                  key={treatment.id} 
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: 12,
+                    backgroundColor: colors.cardElevated,
+                    borderRadius: 12,
+                    gap: 12,
+                  }}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                      {treatment.name}
+                    </Text>
+                    {treatment.dosage_amount && (
+                      <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                        {treatment.dosage_amount} {treatment.dosage_unit}
+                      </Text>
+                    )}
+                    {logsToday.length > 0 && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                        <Ionicons name="checkmark-circle" size={12} color={colors.fodmapLow} />
+                        <Text style={{ fontSize: 11, color: colors.fodmapLow }}>
+                          {logsToday.length} toma{logsToday.length !== 1 ? 's' : ''} hoy
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Pressable
+                    onPress={() => handleQuickLogTreatment(treatment)}
+                    style={{
+                      paddingHorizontal: 16,
+                      paddingVertical: 10,
+                      backgroundColor: colors.treatment,
+                      borderRadius: 10,
+                    }}
+                  >
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#FFFFFF' }}>
+                      + Toma
+                    </Text>
+                  </Pressable>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Create new treatment button */}
+        <Pressable
+          onPress={() => router.push('/treatment/new')}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 14,
+            marginTop: 12,
+            backgroundColor: colors.treatment + '15',
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: colors.treatment + '30',
+            borderStyle: 'dashed',
+            gap: 8,
+          }}
+        >
+          <Ionicons name="add-circle-outline" size={20} color={colors.treatment} />
+          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.treatment }}>
+            Crear nuevo tratamiento
+          </Text>
+        </Pressable>
+
+        {/* Link to manage all treatments */}
+        <Pressable
+          onPress={() => router.push('/treatment')}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingVertical: 10,
+            marginTop: 8,
+            gap: 6,
+          }}
+        >
+          <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+            Ver todos mis tratamientos
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+        </Pressable>
+      </View>
+
+      {/* BLOCK 2: Quick Entry */}
+      <View style={{
+        backgroundColor: colors.card,
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+      }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <View style={{
+            width: 36,
+            height: 36,
+            borderRadius: 10,
+            backgroundColor: '#8B5CF6' + '20',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <Ionicons name="flash" size={20} color="#8B5CF6" />
+          </View>
+          <View>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>
+              Toma Puntual
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.textMuted }}>
+              Registra una toma rápida sin crear tratamiento
+            </Text>
+          </View>
+        </View>
+
+        {/* Today's quick logs */}
+        {todayLogs.filter(log => !log.treatment_id || !treatments.find(t => t.id === log.treatment_id)).length > 0 && (
+          <View style={{ marginBottom: 12 }}>
+            <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 8 }}>
+              Tomas puntuales de hoy:
+            </Text>
+            <View style={{ gap: 6 }}>
+              {todayLogs.filter(log => !log.treatment_id || !treatments.find(t => t.id === log.treatment_id)).slice(0, 3).map((log) => (
+                <View 
+                  key={log.id}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: 10,
+                    backgroundColor: colors.cardElevated,
+                    borderRadius: 8,
+                    gap: 8,
+                  }}
+                >
+                  <Ionicons name="checkmark-circle" size={14} color={colors.fodmapLow} />
+                  <Text style={{ fontSize: 13, color: colors.text, flex: 1 }}>
+                    {log.treatment_name}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                    {log.time}
+                  </Text>
+                </View>
+              ))}
             </View>
-          </Button>
+          </View>
+        )}
+
+        {/* Quick entry button */}
+        <Pressable
+          onPress={() => setShowQuickModal(true)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            backgroundColor: '#8B5CF6',
+            borderRadius: 12,
+            gap: 10,
+          }}
+        >
+          <Ionicons name="add-circle" size={22} color="#FFFFFF" />
+          <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>
+            Registrar toma puntual
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* Quick Entry Modal */}
+      <Modal
+        visible={showQuickModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowQuickModal(false)}
+      >
+        <View style={{ 
+          flex: 1, 
+          backgroundColor: 'rgba(0,0,0,0.5)', 
+          justifyContent: 'flex-end' 
+        }}>
+          <View style={{ 
+            backgroundColor: colors.card, 
+            borderTopLeftRadius: 24, 
+            borderTopRightRadius: 24,
+            maxHeight: '90%',
+          }}>
+            {/* Modal Header */}
+            <View style={{ 
+              flexDirection: 'row', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: 16,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
+            }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
+                Toma Puntual
+              </Text>
+              <Pressable onPress={() => setShowQuickModal(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ padding: 16 }} showsVerticalScrollIndicator={false}>
+              <View style={{ gap: 16, paddingBottom: 32 }}>
+                {/* Treatment name */}
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                    Medicamento / Suplemento
+                  </Text>
+                  <TextInput
+                    value={quickName}
+                    onChangeText={setQuickName}
+                    placeholder="Ej: Ibuprofeno, Vitamina D..."
+                    placeholderTextColor={colors.textMuted}
+                    style={{
+                      fontSize: 16,
+                      color: colors.text,
+                      padding: 14,
+                      backgroundColor: colors.cardElevated,
+                      borderRadius: 12,
+                    }}
+                  />
+                </View>
+
+                {/* Dosage */}
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                    Dosis (opcional)
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    <TextInput
+                      value={dosageAmount}
+                      onChangeText={setDosageAmount}
+                      placeholder="0"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="numeric"
+                      style={{
+                        width: 80,
+                        fontSize: 20,
+                        fontWeight: '700',
+                        color: colors.text,
+                        padding: 14,
+                        backgroundColor: colors.cardElevated,
+                        borderRadius: 12,
+                        textAlign: 'center',
+                      }}
+                    />
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                      {DOSAGE_UNITS.map(unit => (
+                        <Pressable
+                          key={unit}
+                          onPress={() => setDosageUnit(unit)}
+                          style={{
+                            paddingHorizontal: 14,
+                            paddingVertical: 14,
+                            borderRadius: 12,
+                            backgroundColor: dosageUnit === unit ? '#8B5CF6' : colors.cardElevated,
+                          }}
+                        >
+                          <Text style={{
+                            fontSize: 14,
+                            fontWeight: '600',
+                            color: dosageUnit === unit ? '#FFFFFF' : colors.textSecondary,
+                          }}>
+                            {unit}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </ScrollView>
+                  </View>
+                </View>
+
+                {/* Timestamp */}
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                    ¿Cuándo?
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <Pressable
+                      onPress={() => setUseCurrentTime(true)}
+                      style={{
+                        flex: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        padding: 12,
+                        borderRadius: 10,
+                        backgroundColor: useCurrentTime ? '#8B5CF6' : colors.cardElevated,
+                      }}
+                    >
+                      <Ionicons name="time" size={16} color={useCurrentTime ? '#FFFFFF' : colors.textSecondary} />
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: useCurrentTime ? '#FFFFFF' : colors.textSecondary }}>
+                        Ahora
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setUseCurrentTime(false)}
+                      style={{
+                        flex: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        padding: 12,
+                        borderRadius: 10,
+                        backgroundColor: !useCurrentTime ? '#8B5CF6' : colors.cardElevated,
+                      }}
+                    >
+                      <Ionicons name="calendar" size={16} color={!useCurrentTime ? '#FFFFFF' : colors.textSecondary} />
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: !useCurrentTime ? '#FFFFFF' : colors.textSecondary }}>
+                        Otra hora
+                      </Text>
+                    </Pressable>
+                  </View>
+                  {!useCurrentTime && (
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                      <TextInput
+                        value={customDate}
+                        onChangeText={setCustomDate}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor={colors.textMuted}
+                        style={{
+                          flex: 1,
+                          fontSize: 14,
+                          color: colors.text,
+                          padding: 12,
+                          backgroundColor: colors.cardElevated,
+                          borderRadius: 10,
+                          textAlign: 'center',
+                        }}
+                      />
+                      <TextInput
+                        value={customTime}
+                        onChangeText={setCustomTime}
+                        placeholder="HH:MM"
+                        placeholderTextColor={colors.textMuted}
+                        style={{
+                          flex: 1,
+                          fontSize: 14,
+                          color: colors.text,
+                          padding: 12,
+                          backgroundColor: colors.cardElevated,
+                          borderRadius: 10,
+                          textAlign: 'center',
+                        }}
+                      />
+                    </View>
+                  )}
+                </View>
+
+                {/* Notes */}
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                    Notas (opcional)
+                  </Text>
+                  <TextInput
+                    value={notes}
+                    onChangeText={setNotes}
+                    placeholder="Observaciones..."
+                    placeholderTextColor={colors.textMuted}
+                    multiline
+                    style={{
+                      fontSize: 15,
+                      color: colors.text,
+                      padding: 12,
+                      backgroundColor: colors.cardElevated,
+                      borderRadius: 10,
+                      minHeight: 60,
+                      textAlignVertical: 'top',
+                    }}
+                  />
+                </View>
+
+                {/* Save button */}
+                <Button 
+                  onPress={handleSaveQuickEntry} 
+                  loading={loading} 
+                  fullWidth 
+                  size="lg"
+                  disabled={!quickName.trim()}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
+                      Registrar toma
+                    </Text>
+                  </View>
+                </Button>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-// Activity Form (simplified - direct quick entry)
+// Activity Form - Two blocks: My workouts + Quick entry
 function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }) {
   const router = useRouter();
+  const today = new Date().toISOString().split('T')[0];
+  
+  // Data
+  const [scheduledActivities, setScheduledActivities] = useState<ScheduledActivity[]>([]);
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
+  const [todayLogs, setTodayLogs] = useState<ActivityLog[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
+  
+  // Quick entry modal
+  const [showQuickModal, setShowQuickModal] = useState(false);
   const [selectedType, setSelectedType] = useState<ActivityType | null>(null);
   const [customName, setCustomName] = useState('');
+  const [showCustom, setShowCustom] = useState(false);
   const [duration, setDuration] = useState('30');
   const [intensity, setIntensity] = useState(5);
   const [distance, setDistance] = useState('');
   const [calories, setCalories] = useState('');
   const [notes, setNotes] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [showCustom, setShowCustom] = useState(false);
-  const [recommendations, setRecommendations] = useState<ActivityType[]>([]);
-  
-  // Timestamp fields
   const [useCurrentTime, setUseCurrentTime] = useState(true);
-  const [customDate, setCustomDate] = useState(new Date().toISOString().split('T')[0]);
+  const [customDate, setCustomDate] = useState(today);
   const [customTime, setCustomTime] = useState(new Date().toTimeString().slice(0, 5));
+  const [loading, setLoading] = useState(false);
+
+  const activityColor = '#FF9800';
 
   React.useEffect(() => {
-    loadActivityTypes();
+    loadData();
   }, []);
 
-  const loadActivityTypes = async () => {
+  const loadData = async () => {
     try {
       const db = await getDatabase();
-      const types = await db.getAllAsync<ActivityType>(
-        'SELECT * FROM activity_types ORDER BY usage_count DESC, name ASC'
-      );
+      const [scheduled, types, logs] = await Promise.all([
+        db.getAllAsync<ScheduledActivity>('SELECT * FROM scheduled_activities WHERE is_active = 1 ORDER BY name'),
+        db.getAllAsync<ActivityType>('SELECT * FROM activity_types ORDER BY usage_count DESC, name ASC'),
+        db.getAllAsync<ActivityLog>(`SELECT al.*, at.name as activity_name, at.icon, at.color 
+          FROM activity_logs al 
+          LEFT JOIN activity_types at ON al.activity_type_id = at.id 
+          WHERE al.date = ? ORDER BY al.time DESC`, [today])
+      ]);
+      setScheduledActivities(scheduled);
       setActivityTypes(types);
-      
-      // Get top 4 most used as recommendations
-      const topUsed = types.filter(t => t.usage_count > 0).slice(0, 4);
-      setRecommendations(topUsed);
+      setTodayLogs(logs);
     } catch (error) {
-      console.error('Error loading activity types:', error);
+      console.error('Error loading activities:', error);
+    } finally {
+      setLoadingData(false);
     }
   };
 
-  const handleSave = async () => {
+  const handleQuickLogScheduled = async (scheduled: ScheduledActivity) => {
+    setLoading(true);
+    try {
+      const now = new Date();
+      
+      // Find activity type
+      const actType = activityTypes.find(t => t.id === scheduled.activity_type_id);
+      
+      // Log the activity
+      await insertRow('activity_logs', {
+        activity_type_id: scheduled.activity_type_id,
+        scheduled_activity_id: scheduled.id,
+        duration_minutes: scheduled.duration_minutes || 30,
+        intensity: 5,
+        date: now.toISOString().split('T')[0],
+        time: now.toTimeString().slice(0, 5),
+      });
+      
+      // Mark as completed in scheduled_activity_logs
+      await insertRow('scheduled_activity_logs', {
+        scheduled_activity_id: scheduled.id,
+        date: now.toISOString().split('T')[0],
+        status: 'completed',
+        actual_duration_minutes: scheduled.duration_minutes || 30,
+      });
+
+      Alert.alert('¡Guardado!', `${scheduled.name} completado`);
+      loadData();
+      onSuccess();
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo registrar la actividad');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveQuickEntry = async () => {
     if (!selectedType && !customName.trim()) {
       Alert.alert('Error', 'Por favor, selecciona o crea un tipo de actividad');
       return;
@@ -1316,7 +1595,6 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
       let activityTypeId: number;
 
       if (showCustom && customName.trim()) {
-        // Create new custom activity type
         const result = await db.runAsync(
           'INSERT INTO activity_types (name, icon, color, is_custom, usage_count) VALUES (?, ?, ?, 1, 1)',
           [customName.trim(), 'fitness', '#FF9800']
@@ -1324,18 +1602,13 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
         activityTypeId = result.lastInsertRowId;
       } else if (selectedType) {
         activityTypeId = selectedType.id;
-        // Update usage count
-        await db.runAsync(
-          'UPDATE activity_types SET usage_count = usage_count + 1 WHERE id = ?',
-          [activityTypeId]
-        );
+        await db.runAsync('UPDATE activity_types SET usage_count = usage_count + 1 WHERE id = ?', [activityTypeId]);
       } else {
         Alert.alert('Error', 'Por favor, selecciona una actividad');
         setLoading(false);
         return;
       }
 
-      // Insert activity log
       await insertRow('activity_logs', {
         activity_type_id: activityTypeId,
         duration_minutes: parseInt(duration),
@@ -1348,394 +1621,594 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
       });
 
       Alert.alert('¡Guardado!', 'Actividad registrada correctamente');
+      setShowQuickModal(false);
+      resetQuickForm();
+      loadData();
       onSuccess();
     } catch (error) {
-      console.error('Error saving activity:', error);
       Alert.alert('Error', 'No se pudo guardar el registro');
     } finally {
       setLoading(false);
     }
   };
 
-  const activityColor = '#FF9800';
+  const resetQuickForm = () => {
+    setSelectedType(null);
+    setCustomName('');
+    setShowCustom(false);
+    setDuration('30');
+    setIntensity(5);
+    setDistance('');
+    setCalories('');
+    setNotes('');
+    setUseCurrentTime(true);
+  };
 
   return (
-    <View style={{ gap: 16 }}>
-      {/* Header: Manage activities/workouts button */}
-      <Pressable
-        onPress={() => router.push('/activity')}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: 14,
-          backgroundColor: activityColor + '15',
-          borderRadius: 12,
-          borderWidth: 1,
-          borderColor: activityColor + '30',
-        }}
-      >
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Ionicons name="fitness" size={20} color={activityColor} />
-          <Text style={{ fontSize: 14, fontWeight: '600', color: activityColor }}>
-            Gestionar mis entrenamientos
-          </Text>
+    <View style={{ gap: 20 }}>
+      {/* BLOCK 1: My Workouts / Scheduled Activities */}
+      <View style={{
+        backgroundColor: colors.card,
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+      }}>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              backgroundColor: activityColor + '20',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <Ionicons name="fitness" size={20} color={activityColor} />
+            </View>
+            <View>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>
+                Mis Entrenamientos
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                Programas de ejercicio activos
+              </Text>
+            </View>
+          </View>
         </View>
-        <Ionicons name="chevron-forward" size={18} color={activityColor} />
-      </Pressable>
 
-      {/* Title */}
-      <View style={{ marginTop: 4 }}>
-        <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text }}>
-          Registrar Actividad
-        </Text>
-        <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: 4 }}>
-          Registra una sesión de ejercicio o actividad física
-        </Text>
+        {/* Today's activities from scheduled */}
+        {loadingData ? (
+          <View style={{ padding: 20, alignItems: 'center' }}>
+            <ActivityIndicator color={activityColor} />
+          </View>
+        ) : scheduledActivities.length === 0 ? (
+          <View style={{ 
+            padding: 24, 
+            alignItems: 'center', 
+            backgroundColor: colors.cardElevated,
+            borderRadius: 12,
+          }}>
+            <Ionicons name="barbell-outline" size={32} color={colors.textMuted} />
+            <Text style={{ fontSize: 14, color: colors.textMuted, marginTop: 8, textAlign: 'center' }}>
+              No tienes entrenamientos programados
+            </Text>
+          </View>
+        ) : (
+          <View style={{ gap: 8 }}>
+            {scheduledActivities.slice(0, 5).map((scheduled) => {
+              const actType = activityTypes.find(t => t.id === scheduled.activity_type_id);
+              const todayCompleted = todayLogs.some(log => log.scheduled_activity_id === scheduled.id);
+              return (
+                <View 
+                  key={scheduled.id} 
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: 12,
+                    backgroundColor: todayCompleted ? colors.fodmapLow + '15' : colors.cardElevated,
+                    borderRadius: 12,
+                    gap: 12,
+                    borderWidth: todayCompleted ? 1 : 0,
+                    borderColor: colors.fodmapLow + '30',
+                  }}
+                >
+                  <View style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 10,
+                    backgroundColor: (actType?.color || activityColor) + '20',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <Ionicons 
+                      name={(actType?.icon || 'fitness') as any} 
+                      size={18} 
+                      color={actType?.color || activityColor} 
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                      {scheduled.name}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                      {scheduled.duration_minutes} min · {scheduled.frequency}
+                    </Text>
+                    {todayCompleted && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
+                        <Ionicons name="checkmark-circle" size={12} color={colors.fodmapLow} />
+                        <Text style={{ fontSize: 11, color: colors.fodmapLow }}>
+                          Completado hoy
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  {!todayCompleted && (
+                    <Pressable
+                      onPress={() => handleQuickLogScheduled(scheduled)}
+                      style={{
+                        paddingHorizontal: 14,
+                        paddingVertical: 10,
+                        backgroundColor: activityColor,
+                        borderRadius: 10,
+                      }}
+                    >
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#FFFFFF' }}>
+                        Completar
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Create new workout program */}
+        <Pressable
+          onPress={() => router.push('/activity/schedule')}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 14,
+            marginTop: 12,
+            backgroundColor: activityColor + '15',
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: activityColor + '30',
+            borderStyle: 'dashed',
+            gap: 8,
+          }}
+        >
+          <Ionicons name="add-circle-outline" size={20} color={activityColor} />
+          <Text style={{ fontSize: 14, fontWeight: '600', color: activityColor }}>
+            Crear programa de entrenamiento
+          </Text>
+        </Pressable>
+
+        {/* Link to manage all workouts */}
+        <Pressable
+          onPress={() => router.push('/activity')}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            paddingVertical: 10,
+            marginTop: 8,
+            gap: 6,
+          }}
+        >
+          <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+            Ver todos mis entrenamientos
+          </Text>
+          <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+        </Pressable>
       </View>
 
-      {/* Quick recommendations */}
-      {recommendations.length > 0 && !showCustom && (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {recommendations.map((type) => (
-            <Pressable
-              key={type.id}
-              onPress={() => setSelectedType(type)}
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                paddingHorizontal: 14,
-                paddingVertical: 10,
-                borderRadius: 20,
-                backgroundColor: selectedType?.id === type.id ? type.color : colors.cardElevated,
-                borderWidth: 1,
-                borderColor: selectedType?.id === type.id ? type.color : colors.border,
-                gap: 6,
-              }}
-            >
-              <Ionicons 
-                name={type.icon as any} 
-                size={16} 
-                color={selectedType?.id === type.id ? '#FFFFFF' : type.color} 
-              />
-              <Text style={{
-                fontSize: 13,
-                fontWeight: '600',
-                color: selectedType?.id === type.id ? '#FFFFFF' : colors.text,
-              }}>
-                {type.name}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      )}
-
-      {/* Activity Type Selection */}
-      <Card>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>
-            {showCustom ? 'Actividad personalizada' : 'Todas las actividades'}
-          </Text>
-          <Pressable onPress={() => setShowCustom(!showCustom)}>
-            <Text style={{ fontSize: 13, color: activityColor, fontWeight: '600' }}>
-              {showCustom ? 'Ver lista' : '+ Nueva'}
+      {/* BLOCK 2: Quick Activity Entry */}
+      <View style={{
+        backgroundColor: colors.card,
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: colors.border,
+      }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+          <View style={{
+            width: 36,
+            height: 36,
+            borderRadius: 10,
+            backgroundColor: '#10B981' + '20',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}>
+            <Ionicons name="flash" size={20} color="#10B981" />
+          </View>
+          <View>
+            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>
+              Actividad Puntual
             </Text>
-          </Pressable>
+            <Text style={{ fontSize: 12, color: colors.textMuted }}>
+              Registra cualquier actividad física rápidamente
+            </Text>
+          </View>
         </View>
-        
-        {showCustom ? (
-          <TextInput
-            value={customName}
-            onChangeText={setCustomName}
-            placeholder="Nombre de la actividad..."
-            placeholderTextColor={colors.textMuted}
-            style={{
-              fontSize: 16,
-              color: colors.text,
-              padding: 12,
-              backgroundColor: colors.cardElevated,
-              borderRadius: 10,
-            }}
-          />
-        ) : (
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {activityTypes.map((type) => (
-              <Pressable
-                key={type.id}
-                onPress={() => setSelectedType(type)}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingHorizontal: 12,
-                  paddingVertical: 8,
-                  borderRadius: 16,
-                  backgroundColor: selectedType?.id === type.id ? type.color : colors.cardElevated,
-                  gap: 6,
-                }}
-              >
-                <Ionicons 
-                  name={type.icon as any} 
-                  size={14} 
-                  color={selectedType?.id === type.id ? '#FFFFFF' : type.color} 
-                />
-                <Text style={{
-                  fontSize: 12,
-                  fontWeight: '600',
-                  color: selectedType?.id === type.id ? '#FFFFFF' : colors.textSecondary,
-                }}>
-                  {type.name}
-                </Text>
+
+        {/* Today's quick logs */}
+        {todayLogs.filter(log => !log.scheduled_activity_id).length > 0 && (
+          <View style={{ marginBottom: 12 }}>
+            <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 8 }}>
+              Actividades de hoy:
+            </Text>
+            <View style={{ gap: 6 }}>
+              {todayLogs.filter(log => !log.scheduled_activity_id).slice(0, 3).map((log: any) => (
+                <View 
+                  key={log.id}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: 10,
+                    backgroundColor: colors.cardElevated,
+                    borderRadius: 8,
+                    gap: 8,
+                  }}
+                >
+                  <Ionicons name={(log.icon || 'fitness') as any} size={14} color={log.color || activityColor} />
+                  <Text style={{ fontSize: 13, color: colors.text, flex: 1 }}>
+                    {log.activity_name || 'Actividad'}
+                  </Text>
+                  <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                    {log.duration_minutes}min · {log.time}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Quick entry button */}
+        <Pressable
+          onPress={() => setShowQuickModal(true)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 16,
+            backgroundColor: '#10B981',
+            borderRadius: 12,
+            gap: 10,
+          }}
+        >
+          <Ionicons name="add-circle" size={22} color="#FFFFFF" />
+          <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>
+            Registrar actividad
+          </Text>
+        </Pressable>
+      </View>
+
+      {/* Quick Entry Modal */}
+      <Modal
+        visible={showQuickModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowQuickModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ 
+            backgroundColor: colors.card, 
+            borderTopLeftRadius: 24, 
+            borderTopRightRadius: 24,
+            maxHeight: '92%',
+          }}>
+            {/* Modal Header */}
+            <View style={{ 
+              flexDirection: 'row', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: 16,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
+            }}>
+              <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
+                Actividad Puntual
+              </Text>
+              <Pressable onPress={() => setShowQuickModal(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
               </Pressable>
-            ))}
-          </View>
-        )}
-      </Card>
-
-      {/* Duration and Distance */}
-      <Card>
-        <View style={{ flexDirection: 'row', gap: 12 }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-              Duración (min)
-            </Text>
-            <TextInput
-              value={duration}
-              onChangeText={setDuration}
-              placeholder="30"
-              placeholderTextColor={colors.textMuted}
-              keyboardType="numeric"
-              style={{
-                fontSize: 18,
-                fontWeight: '700',
-                color: colors.text,
-                padding: 12,
-                backgroundColor: colors.cardElevated,
-                borderRadius: 10,
-                textAlign: 'center',
-              }}
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-              Distancia (km)
-            </Text>
-            <TextInput
-              value={distance}
-              onChangeText={setDistance}
-              placeholder="—"
-              placeholderTextColor={colors.textMuted}
-              keyboardType="decimal-pad"
-              style={{
-                fontSize: 18,
-                fontWeight: '700',
-                color: colors.text,
-                padding: 12,
-                backgroundColor: colors.cardElevated,
-                borderRadius: 10,
-                textAlign: 'center',
-              }}
-            />
-          </View>
-        </View>
-      </Card>
-
-      {/* Intensity */}
-      <Card>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>
-          Intensidad: {intensity}/10
-        </Text>
-        <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 12 }}>
-          {INTENSITY_LABELS[intensity]}
-        </Text>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 4 }}>
-          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
-            <Pressable
-              key={level}
-              onPress={() => setIntensity(level)}
-              style={{
-                flex: 1,
-                aspectRatio: 1,
-                maxWidth: 28,
-                borderRadius: 8,
-                backgroundColor: intensity >= level 
-                  ? level <= 3 ? colors.fodmapLow 
-                    : level <= 6 ? activityColor 
-                    : colors.fodmapHigh
-                  : colors.cardElevated,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Text style={{
-                fontSize: 10,
-                fontWeight: '600',
-                color: intensity >= level ? '#FFFFFF' : colors.textMuted,
-              }}>
-                {level}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      </Card>
-
-      {/* Timestamp */}
-      <Card>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
-          ¿Cuándo realizaste la actividad?
-        </Text>
-        
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: useCurrentTime ? 0 : 14 }}>
-          <Pressable
-            onPress={() => setUseCurrentTime(true)}
-            style={{
-              flex: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              padding: 14,
-              borderRadius: 12,
-              backgroundColor: useCurrentTime ? activityColor : colors.cardElevated,
-            }}
-          >
-            <Ionicons 
-              name="time" 
-              size={18} 
-              color={useCurrentTime ? '#FFFFFF' : colors.textSecondary} 
-            />
-            <Text style={{
-              fontSize: 14,
-              fontWeight: '600',
-              color: useCurrentTime ? '#FFFFFF' : colors.textSecondary,
-            }}>
-              Ahora mismo
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setUseCurrentTime(false)}
-            style={{
-              flex: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              padding: 14,
-              borderRadius: 12,
-              backgroundColor: !useCurrentTime ? activityColor : colors.cardElevated,
-            }}
-          >
-            <Ionicons 
-              name="calendar" 
-              size={18} 
-              color={!useCurrentTime ? '#FFFFFF' : colors.textSecondary} 
-            />
-            <Text style={{
-              fontSize: 14,
-              fontWeight: '600',
-              color: !useCurrentTime ? '#FFFFFF' : colors.textSecondary,
-            }}>
-              Otra hora
-            </Text>
-          </Pressable>
-        </View>
-
-        {!useCurrentTime && (
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>
-                Fecha
-              </Text>
-              <TextInput
-                value={customDate}
-                onChangeText={setCustomDate}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textMuted}
-                style={{
-                  fontSize: 15,
-                  color: colors.text,
-                  padding: 12,
-                  backgroundColor: colors.cardElevated,
-                  borderRadius: 10,
-                  textAlign: 'center',
-                }}
-              />
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>
-                Hora
-              </Text>
-              <TextInput
-                value={customTime}
-                onChangeText={setCustomTime}
-                placeholder="HH:MM"
-                placeholderTextColor={colors.textMuted}
-                style={{
-                  fontSize: 15,
-                  color: colors.text,
-                  padding: 12,
-                  backgroundColor: colors.cardElevated,
-                  borderRadius: 10,
-                  textAlign: 'center',
-                }}
-              />
-            </View>
+
+            <ScrollView style={{ padding: 16 }} showsVerticalScrollIndicator={false}>
+              <View style={{ gap: 16, paddingBottom: 32 }}>
+                {/* Activity Type */}
+                <View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary }}>
+                      {showCustom ? 'Actividad personalizada' : 'Tipo de actividad'}
+                    </Text>
+                    <Pressable onPress={() => setShowCustom(!showCustom)}>
+                      <Text style={{ fontSize: 12, color: '#10B981', fontWeight: '600' }}>
+                        {showCustom ? 'Ver lista' : '+ Nueva'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                  
+                  {showCustom ? (
+                    <TextInput
+                      value={customName}
+                      onChangeText={setCustomName}
+                      placeholder="Nombre de la actividad..."
+                      placeholderTextColor={colors.textMuted}
+                      style={{
+                        fontSize: 16,
+                        color: colors.text,
+                        padding: 14,
+                        backgroundColor: colors.cardElevated,
+                        borderRadius: 12,
+                      }}
+                    />
+                  ) : (
+                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                      {activityTypes.slice(0, 12).map((type) => (
+                        <Pressable
+                          key={type.id}
+                          onPress={() => setSelectedType(type)}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            paddingHorizontal: 12,
+                            paddingVertical: 8,
+                            borderRadius: 16,
+                            backgroundColor: selectedType?.id === type.id ? type.color : colors.cardElevated,
+                            gap: 6,
+                          }}
+                        >
+                          <Ionicons 
+                            name={type.icon as any} 
+                            size={14} 
+                            color={selectedType?.id === type.id ? '#FFFFFF' : type.color} 
+                          />
+                          <Text style={{
+                            fontSize: 12,
+                            fontWeight: '600',
+                            color: selectedType?.id === type.id ? '#FFFFFF' : colors.textSecondary,
+                          }}>
+                            {type.name}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  )}
+                </View>
+
+                {/* Duration and Distance */}
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                      Duración (min)
+                    </Text>
+                    <TextInput
+                      value={duration}
+                      onChangeText={setDuration}
+                      placeholder="30"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="numeric"
+                      style={{
+                        fontSize: 18,
+                        fontWeight: '700',
+                        color: colors.text,
+                        padding: 12,
+                        backgroundColor: colors.cardElevated,
+                        borderRadius: 10,
+                        textAlign: 'center',
+                      }}
+                    />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                      Distancia (km)
+                    </Text>
+                    <TextInput
+                      value={distance}
+                      onChangeText={setDistance}
+                      placeholder="—"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="decimal-pad"
+                      style={{
+                        fontSize: 18,
+                        fontWeight: '700',
+                        color: colors.text,
+                        padding: 12,
+                        backgroundColor: colors.cardElevated,
+                        borderRadius: 10,
+                        textAlign: 'center',
+                      }}
+                    />
+                  </View>
+                </View>
+
+                {/* Intensity */}
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>
+                    Intensidad: {intensity}/10
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8 }}>
+                    {INTENSITY_LABELS[intensity]}
+                  </Text>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 4 }}>
+                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
+                      <Pressable
+                        key={level}
+                        onPress={() => setIntensity(level)}
+                        style={{
+                          flex: 1,
+                          aspectRatio: 1,
+                          maxWidth: 28,
+                          borderRadius: 8,
+                          backgroundColor: intensity >= level 
+                            ? level <= 3 ? colors.fodmapLow 
+                              : level <= 6 ? activityColor 
+                              : colors.fodmapHigh
+                            : colors.cardElevated,
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        <Text style={{
+                          fontSize: 10,
+                          fontWeight: '600',
+                          color: intensity >= level ? '#FFFFFF' : colors.textMuted,
+                        }}>
+                          {level}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+
+                {/* Timestamp */}
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                    ¿Cuándo?
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    <Pressable
+                      onPress={() => setUseCurrentTime(true)}
+                      style={{
+                        flex: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        padding: 12,
+                        borderRadius: 10,
+                        backgroundColor: useCurrentTime ? '#10B981' : colors.cardElevated,
+                      }}
+                    >
+                      <Ionicons name="time" size={16} color={useCurrentTime ? '#FFFFFF' : colors.textSecondary} />
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: useCurrentTime ? '#FFFFFF' : colors.textSecondary }}>
+                        Ahora
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setUseCurrentTime(false)}
+                      style={{
+                        flex: 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 6,
+                        padding: 12,
+                        borderRadius: 10,
+                        backgroundColor: !useCurrentTime ? '#10B981' : colors.cardElevated,
+                      }}
+                    >
+                      <Ionicons name="calendar" size={16} color={!useCurrentTime ? '#FFFFFF' : colors.textSecondary} />
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: !useCurrentTime ? '#FFFFFF' : colors.textSecondary }}>
+                        Otra hora
+                      </Text>
+                    </Pressable>
+                  </View>
+                  {!useCurrentTime && (
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+                      <TextInput
+                        value={customDate}
+                        onChangeText={setCustomDate}
+                        placeholder="YYYY-MM-DD"
+                        placeholderTextColor={colors.textMuted}
+                        style={{
+                          flex: 1,
+                          fontSize: 14,
+                          color: colors.text,
+                          padding: 12,
+                          backgroundColor: colors.cardElevated,
+                          borderRadius: 10,
+                          textAlign: 'center',
+                        }}
+                      />
+                      <TextInput
+                        value={customTime}
+                        onChangeText={setCustomTime}
+                        placeholder="HH:MM"
+                        placeholderTextColor={colors.textMuted}
+                        style={{
+                          flex: 1,
+                          fontSize: 14,
+                          color: colors.text,
+                          padding: 12,
+                          backgroundColor: colors.cardElevated,
+                          borderRadius: 10,
+                          textAlign: 'center',
+                        }}
+                      />
+                    </View>
+                  )}
+                </View>
+
+                {/* Calories */}
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                    Calorías (opcional)
+                  </Text>
+                  <TextInput
+                    value={calories}
+                    onChangeText={setCalories}
+                    placeholder="Ej: 200"
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="numeric"
+                    style={{
+                      fontSize: 16,
+                      color: colors.text,
+                      padding: 12,
+                      backgroundColor: colors.cardElevated,
+                      borderRadius: 10,
+                    }}
+                  />
+                </View>
+
+                {/* Notes */}
+                <View>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                    Notas (opcional)
+                  </Text>
+                  <TextInput
+                    value={notes}
+                    onChangeText={setNotes}
+                    placeholder="Cómo te sentiste, detalles..."
+                    placeholderTextColor={colors.textMuted}
+                    multiline
+                    style={{
+                      fontSize: 15,
+                      color: colors.text,
+                      padding: 12,
+                      backgroundColor: colors.cardElevated,
+                      borderRadius: 10,
+                      minHeight: 60,
+                      textAlignVertical: 'top',
+                    }}
+                  />
+                </View>
+
+                {/* Save button */}
+                <Button 
+                  onPress={handleSaveQuickEntry} 
+                  loading={loading} 
+                  fullWidth 
+                  size="lg"
+                  disabled={!selectedType && !customName.trim()}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
+                      Guardar actividad
+                    </Text>
+                  </View>
+                </Button>
+              </View>
+            </ScrollView>
           </View>
-        )}
-      </Card>
-
-      {/* Calories (optional) */}
-      <Card>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-          Calorías quemadas (opcional)
-        </Text>
-        <TextInput
-          value={calories}
-          onChangeText={setCalories}
-          placeholder="Ej: 200"
-          placeholderTextColor={colors.textMuted}
-          keyboardType="numeric"
-          style={{
-            fontSize: 16,
-            color: colors.text,
-            padding: 12,
-            backgroundColor: colors.cardElevated,
-            borderRadius: 10,
-          }}
-        />
-      </Card>
-
-      {/* Notes */}
-      <Card>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-          Notas (opcional)
-        </Text>
-        <TextInput
-          value={notes}
-          onChangeText={setNotes}
-          placeholder="Cómo te sentiste, detalles del entrenamiento..."
-          placeholderTextColor={colors.textMuted}
-          multiline
-          numberOfLines={2}
-          style={{
-            fontSize: 15,
-            color: colors.text,
-            padding: 12,
-            backgroundColor: colors.cardElevated,
-            borderRadius: 10,
-            minHeight: 60,
-            textAlignVertical: 'top',
-          }}
-        />
-      </Card>
-
-      <Button onPress={handleSave} loading={loading} fullWidth size="lg">
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-          <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
-            Guardar actividad
-          </Text>
         </View>
-      </Button>
+      </Modal>
     </View>
   );
 }

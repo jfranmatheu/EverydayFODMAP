@@ -1,20 +1,20 @@
-import React, { useState, useCallback } from 'react';
+import { Button, Card } from '@/components/ui';
+import { useDatabase } from '@/contexts/DatabaseContext';
+import { useTheme } from '@/contexts/ThemeContext';
+import { getDatabase } from '@/lib/database';
+import { DAY_LABELS, ScheduledActivity } from '@/lib/types';
+import { Ionicons } from '@expo/vector-icons';
+import { Stack, useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useState } from 'react';
 import {
-  View,
-  Text,
-  ScrollView,
+  Alert,
   Pressable,
   RefreshControl,
-  Alert,
+  ScrollView,
+  Text,
+  View,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { useRouter, useFocusEffect, Stack } from 'expo-router';
 import Animated, { FadeInDown, FadeInRight } from 'react-native-reanimated';
-import { useTheme } from '@/contexts/ThemeContext';
-import { useDatabase } from '@/contexts/DatabaseContext';
-import { Card, Button } from '@/components/ui';
-import { getDatabase } from '@/lib/database';
-import { ScheduledActivity, ActivityType, DAY_LABELS, FREQUENCY_TYPE_LABELS } from '@/lib/types';
 
 interface ScheduledActivityWithType extends ScheduledActivity {
   type_name: string;
@@ -25,25 +25,11 @@ interface ScheduledActivityWithType extends ScheduledActivity {
   totalCount?: number;
 }
 
-interface RecentLog {
-  id: number;
-  type_name: string;
-  icon: string;
-  color: string;
-  duration_minutes: number;
-  intensity: number;
-  distance_km?: number;
-  calories?: number;
-  date: string;
-  time: string;
-}
-
 export default function TrainingScreen() {
   const { colors } = useTheme();
   const { isReady } = useDatabase();
   const router = useRouter();
   const [scheduledActivities, setScheduledActivities] = useState<ScheduledActivityWithType[]>([]);
-  const [recentLogs, setRecentLogs] = useState<RecentLog[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<'active' | 'all'>('active');
 
@@ -98,16 +84,6 @@ export default function TrainingScreen() {
       );
 
       setScheduledActivities(scheduledWithStatus);
-
-      // Load recent activity logs
-      const logs = await db.getAllAsync<any>(`
-        SELECT al.*, at.name as type_name, at.icon, at.color
-        FROM activity_logs al
-        LEFT JOIN activity_types at ON al.activity_type_id = at.id
-        ORDER BY al.date DESC, al.time DESC
-        LIMIT 15
-      `);
-      setRecentLogs(logs || []);
     } catch (error) {
       console.error('Error loading data:', error);
     }
@@ -214,6 +190,14 @@ export default function TrainingScreen() {
           title: 'Entrenamientos',
           headerStyle: { backgroundColor: colors.surface },
           headerTintColor: colors.text,
+          headerRight: () => (
+            <Pressable
+              onPress={() => router.push('/activity/schedule')}
+              style={{ marginRight: 16 }}
+            >
+              <Ionicons name="add-circle" size={28} color={activityColor} />
+            </Pressable>
+          ),
         }}
       />
       <ScrollView
@@ -223,47 +207,29 @@ export default function TrainingScreen() {
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={activityColor} />
         }
       >
-        {/* Header Actions */}
+        {/* Filters */}
         <Animated.View entering={FadeInDown.delay(100).springify()}>
-          <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
-            <Pressable
-              onPress={() => router.push('/log?type=activity')}
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                backgroundColor: activityColor,
-                paddingVertical: 14,
-                borderRadius: 12,
-              }}
-            >
-              <Ionicons name="add-circle" size={20} color="#FFFFFF" />
-              <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 14 }}>
-                Registrar actividad
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => router.push('/activity/schedule')}
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                backgroundColor: activityColor + '15',
-                paddingVertical: 14,
-                borderRadius: 12,
-                borderWidth: 1,
-                borderColor: activityColor,
-              }}
-            >
-              <Ionicons name="calendar" size={20} color={activityColor} />
-              <Text style={{ color: activityColor, fontWeight: '700', fontSize: 14 }}>
-                Nuevo programa
-              </Text>
-            </Pressable>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 20 }}>
+            {(['active', 'all'] as const).map(f => (
+              <Pressable
+                key={f}
+                onPress={() => setFilter(f)}
+                style={{
+                  paddingHorizontal: 16,
+                  paddingVertical: 8,
+                  borderRadius: 20,
+                  backgroundColor: filter === f ? activityColor : colors.cardElevated,
+                }}
+              >
+                <Text style={{
+                  fontSize: 13,
+                  fontWeight: '600',
+                  color: filter === f ? '#FFFFFF' : colors.textSecondary,
+                }}>
+                  {f === 'active' ? 'Activos' : 'Todos'}
+                </Text>
+              </Pressable>
+            ))}
           </View>
         </Animated.View>
 
@@ -354,38 +320,9 @@ export default function TrainingScreen() {
 
         {/* Scheduled Programs */}
         <Animated.View entering={FadeInDown.delay(200).springify()}>
-          <View style={{ 
-            flexDirection: 'row', 
-            justifyContent: 'space-between',
-            alignItems: 'center', 
-            marginBottom: 12 
-          }}>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>
-              Mis programas
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 6 }}>
-              {(['active', 'all'] as const).map(f => (
-                <Pressable
-                  key={f}
-                  onPress={() => setFilter(f)}
-                  style={{
-                    paddingHorizontal: 12,
-                    paddingVertical: 6,
-                    borderRadius: 16,
-                    backgroundColor: filter === f ? activityColor : colors.cardElevated,
-                  }}
-                >
-                  <Text style={{
-                    fontSize: 12,
-                    fontWeight: '600',
-                    color: filter === f ? '#FFFFFF' : colors.textSecondary,
-                  }}>
-                    {f === 'active' ? 'Activos' : 'Todos'}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-          </View>
+          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text, marginBottom: 12 }}>
+            Mis programas
+          </Text>
 
           {filteredActivities.length > 0 ? (
             <View style={{ gap: 10, marginBottom: 24 }}>
@@ -507,106 +444,21 @@ export default function TrainingScreen() {
           )}
         </Animated.View>
 
-        {/* Recent History */}
+        {/* Add Button */}
         <Animated.View entering={FadeInDown.delay(300).springify()}>
-          <Text style={{ 
-            fontSize: 16, 
-            fontWeight: '700', 
-            color: colors.text,
-            marginBottom: 12,
-          }}>
-            Historial reciente
-          </Text>
-          {recentLogs.length > 0 ? (
-            <View style={{ gap: 8 }}>
-              {recentLogs.map((log, index) => (
-                <Animated.View 
-                  key={log.id}
-                  entering={FadeInRight.delay(350 + index * 25).springify()}
-                >
-                  <View style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    padding: 12,
-                    backgroundColor: colors.card,
-                    borderRadius: 12,
-                    gap: 12,
-                  }}>
-                    <View style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 18,
-                      backgroundColor: (log.color || activityColor) + '20',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                    }}>
-                      <Ionicons 
-                        name={(log.icon || 'fitness') as any} 
-                        size={18} 
-                        color={log.color || activityColor} 
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
-                        {log.type_name || 'Actividad'}
-                      </Text>
-                      <Text style={{ fontSize: 12, color: colors.textMuted }}>
-                        {new Date(log.date + 'T12:00:00').toLocaleDateString('es-ES', { 
-                          weekday: 'short', 
-                          day: 'numeric', 
-                          month: 'short' 
-                        })} · {log.time?.slice(0, 5)}
-                      </Text>
-                    </View>
-                    <View style={{ alignItems: 'flex-end' }}>
-                      <Text style={{ fontSize: 14, fontWeight: '700', color: colors.text }}>
-                        {log.duration_minutes} min
-                      </Text>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        {log.distance_km && (
-                          <Text style={{ fontSize: 11, color: colors.textSecondary }}>
-                            {log.distance_km} km
-                          </Text>
-                        )}
-                        <View style={{
-                          paddingHorizontal: 6,
-                          paddingVertical: 2,
-                          borderRadius: 8,
-                          backgroundColor: log.intensity <= 3 ? colors.fodmapLow 
-                            : log.intensity <= 6 ? activityColor 
-                            : colors.fodmapHigh,
-                        }}>
-                          <Text style={{ fontSize: 10, fontWeight: '700', color: '#FFFFFF' }}>
-                            {log.intensity}/10
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-                </Animated.View>
-              ))}
-            </View>
-          ) : (
-            <View style={{
-              alignItems: 'center',
-              padding: 24,
-              backgroundColor: colors.card,
-              borderRadius: 12,
-            }}>
-              <Ionicons name="fitness-outline" size={40} color={colors.textMuted} />
-              <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: 12, textAlign: 'center' }}>
-                No hay actividades registradas
+          <Button 
+            onPress={() => router.push('/activity/schedule')}
+            fullWidth 
+            size="lg"
+            style={{ marginTop: 12 }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="add" size={20} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontWeight: '600', fontSize: 16 }}>
+                Añadir programa
               </Text>
-              <Pressable 
-                onPress={() => router.push('/log?type=activity')}
-                style={{ marginTop: 12 }}
-              >
-                <Text style={{ fontSize: 14, fontWeight: '600', color: activityColor }}>
-                  Registrar primera actividad →
-                </Text>
-              </Pressable>
             </View>
-          )}
+          </Button>
         </Animated.View>
       </ScrollView>
     </>
