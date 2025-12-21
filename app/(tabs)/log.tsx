@@ -882,101 +882,73 @@ function BowelForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }
   );
 }
 
-// Treatment Form (enhanced with saved treatments)
+// Treatment Form (simplified - direct quick entry)
 function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }) {
   const router = useRouter();
-  const [treatments, setTreatments] = useState<any[]>([]);
-  const [selectedTreatment, setSelectedTreatment] = useState<any | null>(null);
-  const [selectedDoseIndex, setSelectedDoseIndex] = useState<number | null>(null);
+  
+  // Quick entry fields
+  const [quickName, setQuickName] = useState('');
+  const [dosageAmount, setDosageAmount] = useState('');
+  const [dosageUnit, setDosageUnit] = useState('mg');
+  
+  // Timestamp fields
+  const [useCurrentTime, setUseCurrentTime] = useState(true);
+  const [customDate, setCustomDate] = useState(new Date().toISOString().split('T')[0]);
+  const [customTime, setCustomTime] = useState(new Date().toTimeString().slice(0, 5));
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showQuickAdd, setShowQuickAdd] = useState(false);
-  const [quickName, setQuickName] = useState('');
-  const [quickDosage, setQuickDosage] = useState('');
 
-  React.useEffect(() => {
-    loadTreatments();
-  }, []);
+  const DOSAGE_UNITS = ['mg', 'g', 'ml', 'gotas', 'comprimido', 'cápsula', 'cucharada', 'sobre'];
 
-  const loadTreatments = async () => {
-    try {
-      const db = await getDatabase();
-      const result = await (db as any).getAllAsync(
-        'SELECT * FROM treatments WHERE is_active = 1 ORDER BY name ASC'
-      );
-      setTreatments(result || []);
-    } catch (error) {
-      console.error('Error loading treatments:', error);
-    }
-  };
-
-  const getDoses = (treatment: any): any[] => {
-    if (treatment.doses) {
-      try {
-        return typeof treatment.doses === 'string' 
-          ? JSON.parse(treatment.doses) 
-          : treatment.doses;
-      } catch (e) {}
-    }
-    return [];
-  };
-
-  const handleSave = async () => {
-    if (!selectedTreatment && !quickName.trim()) {
-      Alert.alert('Error', 'Por favor, selecciona un tratamiento o introduce un nombre');
+  const handleSaveQuickEntry = async () => {
+    // Validation for quick entry
+    if (!quickName.trim()) {
+      Alert.alert('Error', 'Por favor, introduce el nombre del tratamiento');
       return;
     }
 
     setLoading(true);
     try {
       const db = await getDatabase();
+      
+      // Determine date/time
       const now = new Date();
+      const logDate = useCurrentTime ? now.toISOString().split('T')[0] : customDate;
+      const logTime = useCurrentTime ? now.toTimeString().slice(0, 5) : customTime;
+      
+      // Quick entry - create or find treatment
+      const existing = await (db as any).getFirstAsync(
+        'SELECT id FROM treatments WHERE name = ?',
+        [quickName.trim()]
+      );
+      
       let treatmentId: number;
-      let treatmentName: string;
-      let scheduledTime: string | null = null;
-      let amountTaken: number | null = null;
-      let unit: string | null = null;
-
-      if (selectedTreatment) {
-        treatmentId = selectedTreatment.id;
-        treatmentName = selectedTreatment.name;
-        
-        const doses = getDoses(selectedTreatment);
-        if (selectedDoseIndex !== null && doses[selectedDoseIndex]) {
-          const dose = doses[selectedDoseIndex];
-          scheduledTime = dose.time;
-          amountTaken = dose.amount;
-          unit = dose.unit;
-        } else if (selectedTreatment.dosage_amount) {
-          amountTaken = selectedTreatment.dosage_amount;
-          unit = selectedTreatment.dosage_unit;
-        }
+      if (existing) {
+        treatmentId = existing.id;
       } else {
-        // Quick add new treatment
         const result = await db.runAsync(
           'INSERT INTO treatments (name, dosage_amount, dosage_unit, frequency, is_active) VALUES (?, ?, ?, ?, 1)',
-          [quickName.trim(), null, null, 'as_needed']
+          [quickName.trim(), parseFloat(dosageAmount) || null, dosageUnit, 'as_needed']
         );
         treatmentId = result.lastInsertRowId;
-        treatmentName = quickName.trim();
       }
 
       // Log the treatment
       await insertRow('treatment_logs', {
         treatment_id: treatmentId,
-        treatment_name: treatmentName,
-        scheduled_time: scheduledTime,
-        dose_index: selectedDoseIndex,
-        date: now.toISOString().split('T')[0],
-        time: now.toTimeString().split(' ')[0].slice(0, 5),
+        treatment_name: quickName.trim(),
+        scheduled_time: null,
+        dose_index: null,
+        date: logDate,
+        time: logTime,
         taken: 1,
         skipped: 0,
-        amount_taken: amountTaken,
-        unit: unit,
+        amount_taken: parseFloat(dosageAmount) || null,
+        unit: dosageAmount.trim() ? dosageUnit : null,
         notes: notes.trim() || null,
       });
 
-      Alert.alert('¡Guardado!', 'Toma registrada correctamente');
+      Alert.alert('¡Guardado!', `Toma de ${quickName.trim()} registrada`);
       onSuccess();
     } catch (error) {
       console.error('Error saving treatment:', error);
@@ -988,7 +960,7 @@ function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => vo
 
   return (
     <View style={{ gap: 16 }}>
-      {/* Link to manage treatments */}
+      {/* Header: Manage treatments button */}
       <Pressable
         onPress={() => router.push('/treatment')}
         style={{
@@ -1003,7 +975,7 @@ function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => vo
         }}
       >
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-          <Ionicons name="settings-outline" size={20} color={colors.treatment} />
+          <Ionicons name="medical" size={20} color={colors.treatment} />
           <Text style={{ fontSize: 14, fontWeight: '600', color: colors.treatment }}>
             Gestionar mis tratamientos
           </Text>
@@ -1011,180 +983,275 @@ function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => vo
         <Ionicons name="chevron-forward" size={18} color={colors.treatment} />
       </Pressable>
 
-      {/* Active treatments */}
-      {treatments.length > 0 && (
-        <Card>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
-            Mis tratamientos activos
-          </Text>
-          <View style={{ gap: 8 }}>
-            {treatments.map((treatment) => {
-              const doses = getDoses(treatment);
-              const isSelected = selectedTreatment?.id === treatment.id;
-              
-              return (
-                <Pressable
-                  key={treatment.id}
-                  onPress={() => {
-                    setSelectedTreatment(isSelected ? null : treatment);
-                    setSelectedDoseIndex(null);
-                    setShowQuickAdd(false);
-                  }}
+      {/* Title */}
+      <View style={{ marginTop: 4 }}>
+        <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text }}>
+          Registrar Toma Puntual
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: 4 }}>
+          Registra una toma de medicamento o suplemento
+        </Text>
+      </View>
+
+      {/* Treatment name */}
+          <Card>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
+              Datos del medicamento
+            </Text>
+            
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 6 }}>
+                Nombre del medicamento / suplemento
+              </Text>
+              <TextInput
+                value={quickName}
+                onChangeText={setQuickName}
+                placeholder="Ej: Ibuprofeno, Omeprazol, Vitamina D..."
+                placeholderTextColor={colors.textMuted}
+                style={{
+                  fontSize: 16,
+                  color: colors.text,
+                  padding: 14,
+                  backgroundColor: colors.cardElevated,
+                  borderRadius: 12,
+                }}
+              />
+            </View>
+
+            {/* Dosage amount + unit */}
+            <View>
+              <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 6 }}>
+                Dosis tomada (opcional)
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <TextInput
+                  value={dosageAmount}
+                  onChangeText={setDosageAmount}
+                  placeholder="0"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="numeric"
                   style={{
-                    padding: 12,
-                    borderRadius: 10,
-                    backgroundColor: isSelected ? colors.treatment + '20' : colors.cardElevated,
-                    borderWidth: 1,
-                    borderColor: isSelected ? colors.treatment : 'transparent',
+                    width: 80,
+                    fontSize: 20,
+                    fontWeight: '700',
+                    color: colors.text,
+                    padding: 14,
+                    backgroundColor: colors.cardElevated,
+                    borderRadius: 12,
+                    textAlign: 'center',
                   }}
+                />
+                <ScrollView 
+                  horizontal 
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={{ gap: 6 }}
                 >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <Ionicons 
-                      name={isSelected ? 'checkmark-circle' : 'ellipse-outline'} 
-                      size={22} 
-                      color={isSelected ? colors.treatment : colors.textMuted} 
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
-                        {treatment.name}
-                      </Text>
-                      {treatment.dosage_amount && (
-                        <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-                          {treatment.dosage_amount} {treatment.dosage_unit}
-                        </Text>
-                      )}
-                    </View>
-                    {treatment.is_chronic === 1 && (
-                      <View style={{
-                        paddingHorizontal: 6,
-                        paddingVertical: 2,
-                        borderRadius: 8,
-                        backgroundColor: colors.primary + '20',
+                  {DOSAGE_UNITS.map(unit => (
+                    <Pressable
+                      key={unit}
+                      onPress={() => setDosageUnit(unit)}
+                      style={{
+                        paddingHorizontal: 14,
+                        paddingVertical: 14,
+                        borderRadius: 12,
+                        backgroundColor: dosageUnit === unit ? colors.treatment : colors.cardElevated,
+                      }}
+                    >
+                      <Text style={{
+                        fontSize: 14,
+                        fontWeight: '600',
+                        color: dosageUnit === unit ? '#FFFFFF' : colors.textSecondary,
                       }}>
-                        <Text style={{ fontSize: 9, fontWeight: '700', color: colors.primary }}>
-                          CRÓNICO
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-
-                  {/* Show doses if selected and has multiple */}
-                  {isSelected && doses.length > 1 && (
-                    <View style={{ marginTop: 12, gap: 6 }}>
-                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 4 }}>
-                        Selecciona la dosis:
+                        {unit}
                       </Text>
-                      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-                        {doses.map((dose: any, idx: number) => (
-                          <Pressable
-                            key={idx}
-                            onPress={(e) => {
-                              e.stopPropagation();
-                              setSelectedDoseIndex(selectedDoseIndex === idx ? null : idx);
-                            }}
-                            style={{
-                              paddingHorizontal: 12,
-                              paddingVertical: 8,
-                              borderRadius: 8,
-                              backgroundColor: selectedDoseIndex === idx ? colors.treatment : colors.card,
-                            }}
-                          >
-                            <Text style={{
-                              fontSize: 13,
-                              fontWeight: '600',
-                              color: selectedDoseIndex === idx ? '#FFFFFF' : colors.text,
-                            }}>
-                              {dose.time} · {dose.amount} {dose.unit}
-                            </Text>
-                          </Pressable>
-                        ))}
-                      </View>
-                    </View>
-                  )}
-                </Pressable>
-              );
-            })}
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </View>
+            </View>
+          </Card>
+
+          {/* Timestamp */}
+          <Card>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
+              ¿Cuándo tomaste la dosis?
+            </Text>
+            
+            {/* Quick options */}
+            <View style={{ flexDirection: 'row', gap: 8, marginBottom: useCurrentTime ? 0 : 14 }}>
+              <Pressable
+                onPress={() => setUseCurrentTime(true)}
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  padding: 14,
+                  borderRadius: 12,
+                  backgroundColor: useCurrentTime ? colors.treatment : colors.cardElevated,
+                }}
+              >
+                <Ionicons 
+                  name="time" 
+                  size={18} 
+                  color={useCurrentTime ? '#FFFFFF' : colors.textSecondary} 
+                />
+                <Text style={{
+                  fontSize: 14,
+                  fontWeight: '600',
+                  color: useCurrentTime ? '#FFFFFF' : colors.textSecondary,
+                }}>
+                  Ahora mismo
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setUseCurrentTime(false)}
+                style={{
+                  flex: 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 8,
+                  padding: 14,
+                  borderRadius: 12,
+                  backgroundColor: !useCurrentTime ? colors.treatment : colors.cardElevated,
+                }}
+              >
+                <Ionicons 
+                  name="calendar" 
+                  size={18} 
+                  color={!useCurrentTime ? '#FFFFFF' : colors.textSecondary} 
+                />
+                <Text style={{
+                  fontSize: 14,
+                  fontWeight: '600',
+                  color: !useCurrentTime ? '#FFFFFF' : colors.textSecondary,
+                }}>
+                  Otra hora
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Custom date/time inputs */}
+            {!useCurrentTime && (
+              <View style={{ flexDirection: 'row', gap: 10 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>
+                    Fecha
+                  </Text>
+                  <TextInput
+                    value={customDate}
+                    onChangeText={setCustomDate}
+                    placeholder="YYYY-MM-DD"
+                    placeholderTextColor={colors.textMuted}
+                    style={{
+                      fontSize: 15,
+                      color: colors.text,
+                      padding: 12,
+                      backgroundColor: colors.cardElevated,
+                      borderRadius: 10,
+                      textAlign: 'center',
+                    }}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>
+                    Hora
+                  </Text>
+                  <TextInput
+                    value={customTime}
+                    onChangeText={setCustomTime}
+                    placeholder="HH:MM"
+                    placeholderTextColor={colors.textMuted}
+                    style={{
+                      fontSize: 15,
+                      color: colors.text,
+                      padding: 12,
+                      backgroundColor: colors.cardElevated,
+                      borderRadius: 10,
+                      textAlign: 'center',
+                    }}
+                  />
+                </View>
+              </View>
+            )}
+          </Card>
+
+          {/* Notes */}
+          <Card>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+              Notas (opcional)
+            </Text>
+            <TextInput
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Efectos, motivo de la toma, observaciones..."
+              placeholderTextColor={colors.textMuted}
+              multiline
+              numberOfLines={2}
+              style={{
+                fontSize: 15,
+                color: colors.text,
+                padding: 12,
+                backgroundColor: colors.cardElevated,
+                borderRadius: 10,
+                minHeight: 60,
+                textAlignVertical: 'top',
+              }}
+            />
+          </Card>
+
+          {/* Summary & Save */}
+          <View style={{ 
+            backgroundColor: colors.treatment + '10', 
+            borderRadius: 14, 
+            padding: 16, 
+            borderWidth: 1,
+            borderColor: colors.treatment + '20',
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <Ionicons name="checkmark-circle" size={22} color={colors.treatment} />
+              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                Resumen del registro
+              </Text>
+            </View>
+            <View style={{ gap: 6 }}>
+              <Text style={{ fontSize: 14, color: colors.text }}>
+                <Text style={{ fontWeight: '700' }}>
+                  {quickName.trim() || 'Sin nombre'}
+                </Text>
+                {dosageAmount.trim() && (
+                  <Text style={{ color: colors.textSecondary }}>
+                    {' '}· {dosageAmount} {dosageUnit}
+                  </Text>
+                )}
+              </Text>
+              <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+                <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+                {'  '}
+                {useCurrentTime 
+                  ? 'Ahora mismo' 
+                  : `${customDate} a las ${customTime}`}
+              </Text>
+            </View>
           </View>
-        </Card>
-      )}
 
-      {/* Quick add toggle */}
-      <Pressable
-        onPress={() => {
-          setShowQuickAdd(!showQuickAdd);
-          if (!showQuickAdd) {
-            setSelectedTreatment(null);
-            setSelectedDoseIndex(null);
-          }
-        }}
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 8,
-          padding: 12,
-          backgroundColor: showQuickAdd ? colors.cardElevated : 'transparent',
-          borderRadius: 10,
-        }}
-      >
-        <Ionicons 
-          name={showQuickAdd ? 'remove-circle' : 'add-circle'} 
-          size={22} 
-          color={colors.treatment} 
-        />
-        <Text style={{ fontSize: 14, fontWeight: '500', color: colors.treatment }}>
-          {showQuickAdd ? 'Cancelar registro rápido' : 'Registrar toma puntual'}
-        </Text>
-      </Pressable>
-
-      {/* Quick add form */}
-      {showQuickAdd && (
-        <Card>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-            Nombre del tratamiento
-          </Text>
-          <TextInput
-            value={quickName}
-            onChangeText={setQuickName}
-            placeholder="Ej: Ibuprofeno, Antiácido..."
-            placeholderTextColor={colors.textMuted}
-            style={{
-              fontSize: 16,
-              color: colors.text,
-              padding: 12,
-              backgroundColor: colors.cardElevated,
-              borderRadius: 10,
-            }}
-          />
-        </Card>
-      )}
-
-      {/* Notes */}
-      <Card>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-          Notas (opcional)
-        </Text>
-        <TextInput
-          value={notes}
-          onChangeText={setNotes}
-          placeholder="Añade notas adicionales..."
-          placeholderTextColor={colors.textMuted}
-          multiline
-          numberOfLines={3}
-          style={{
-            fontSize: 15,
-            color: colors.text,
-            padding: 12,
-            backgroundColor: colors.cardElevated,
-            borderRadius: 10,
-            minHeight: 80,
-            textAlignVertical: 'top',
-          }}
-        />
-      </Card>
-
-      <Button onPress={handleSave} loading={loading} fullWidth size="lg">
-        Registrar toma
-      </Button>
+          <Button 
+            onPress={handleSaveQuickEntry} 
+            loading={loading} 
+            fullWidth 
+            size="lg"
+            disabled={!quickName.trim()}
+            style={{ marginTop: 4 }}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+              <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
+                Registrar toma
+              </Text>
+            </View>
+          </Button>
     </View>
   );
 }

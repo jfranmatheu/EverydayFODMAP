@@ -2,28 +2,28 @@ import { Button, Card } from '@/components/ui';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getDatabase } from '@/lib/database';
 import {
-    cancelAllNotifications,
-    checkNotificationPermissions,
-    getScheduledNotificationsList,
-    requestNotificationPermissions,
-    syncAllTreatmentNotifications,
-    testNotification
+  cancelAllNotifications,
+  checkNotificationPermissions,
+  getScheduledNotificationsList,
+  requestNotificationPermissions,
+  syncAllTreatmentNotifications,
+  testNotification
 } from '@/lib/notifications';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Modal,
-    Platform,
-    Pressable,
-    ScrollView,
-    Switch,
-    Text,
-    TextInput,
-    View,
+  Alert,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Switch,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 import Animated, {
-    FadeInDown,
+  FadeInDown,
 } from 'react-native-reanimated';
 
 type ThemeOption = 'light' | 'dark' | 'auto';
@@ -92,23 +92,38 @@ export default function SettingsScreen() {
     try {
       const db = await getDatabase();
       
-      // Gather all data
+      // Gather only USER data (exclude internal/downloaded data)
       const data = {
-        foods: await db.getAllAsync('SELECT * FROM foods'),
-        recipes: await db.getAllAsync('SELECT * FROM recipes'),
+        // Only user-created foods (source = 'user')
+        foods: await db.getAllAsync("SELECT * FROM foods WHERE source = 'user'"),
+        food_components: await db.getAllAsync("SELECT fc.* FROM food_components fc INNER JOIN foods f ON fc.parent_food_id = f.id WHERE f.source = 'user'"),
+        // Only user-created recipes (source = 'user')
+        recipes: await db.getAllAsync("SELECT * FROM recipes WHERE source = 'user' OR source IS NULL"),
+        recipe_steps: await db.getAllAsync("SELECT rs.* FROM recipe_steps rs INNER JOIN recipes r ON rs.recipe_id = r.id WHERE r.source = 'user' OR r.source IS NULL"),
+        recipe_ingredients: await db.getAllAsync("SELECT ri.* FROM recipe_ingredients ri INNER JOIN recipes r ON ri.recipe_id = r.id WHERE r.source = 'user' OR r.source IS NULL"),
+        // User logs (always user data)
         meals: await db.getAllAsync('SELECT * FROM meals'),
         meal_items: await db.getAllAsync('SELECT * FROM meal_items'),
         water_intake: await db.getAllAsync('SELECT * FROM water_intake'),
         symptoms: await db.getAllAsync('SELECT * FROM symptoms'),
         bowel_movements: await db.getAllAsync('SELECT * FROM bowel_movements'),
+        // Treatments and logs (user data)
         treatments: await db.getAllAsync('SELECT * FROM treatments'),
         treatment_logs: await db.getAllAsync('SELECT * FROM treatment_logs'),
-        activity_types: await db.getAllAsync('SELECT * FROM activity_types'),
+        // User activity logs
         activity_logs: await db.getAllAsync('SELECT * FROM activity_logs'),
+        // User-created activity types only
+        activity_types: await db.getAllAsync("SELECT * FROM activity_types WHERE is_custom = 1"),
+        // User tags and folders
         tags: await db.getAllAsync('SELECT * FROM tags'),
         folders: await db.getAllAsync('SELECT * FROM folders'),
+        // Scheduled activities (user data)
+        scheduled_activities: await db.getAllAsync('SELECT * FROM scheduled_activities'),
+        scheduled_activity_logs: await db.getAllAsync('SELECT * FROM scheduled_activity_logs'),
+        // Metadata
         exportDate: new Date().toISOString(),
         version: '1.0.0',
+        dataType: 'user_only', // Flag to indicate this is user data only
       };
 
       const jsonString = JSON.stringify(data, null, 2);
