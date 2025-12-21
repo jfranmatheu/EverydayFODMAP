@@ -1256,8 +1256,9 @@ function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => vo
   );
 }
 
-// Activity Form
+// Activity Form (simplified - direct quick entry)
 function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }) {
+  const router = useRouter();
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
   const [selectedType, setSelectedType] = useState<ActivityType | null>(null);
   const [customName, setCustomName] = useState('');
@@ -1269,6 +1270,11 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
   const [loading, setLoading] = useState(false);
   const [showCustom, setShowCustom] = useState(false);
   const [recommendations, setRecommendations] = useState<ActivityType[]>([]);
+  
+  // Timestamp fields
+  const [useCurrentTime, setUseCurrentTime] = useState(true);
+  const [customDate, setCustomDate] = useState(new Date().toISOString().split('T')[0]);
+  const [customTime, setCustomTime] = useState(new Date().toTimeString().slice(0, 5));
 
   React.useEffect(() => {
     loadActivityTypes();
@@ -1282,8 +1288,8 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
       );
       setActivityTypes(types);
       
-      // Get top 3 most used as recommendations
-      const topUsed = types.filter(t => t.usage_count > 0).slice(0, 3);
+      // Get top 4 most used as recommendations
+      const topUsed = types.filter(t => t.usage_count > 0).slice(0, 4);
       setRecommendations(topUsed);
     } catch (error) {
       console.error('Error loading activity types:', error);
@@ -1305,6 +1311,8 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
     try {
       const db = await getDatabase();
       const now = new Date();
+      const logDate = useCurrentTime ? now.toISOString().split('T')[0] : customDate;
+      const logTime = useCurrentTime ? now.toTimeString().slice(0, 5) : customTime;
       let activityTypeId: number;
 
       if (showCustom && customName.trim()) {
@@ -1334,8 +1342,8 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
         intensity,
         distance_km: distance ? parseFloat(distance) : null,
         calories: calories ? parseInt(calories) : null,
-        date: now.toISOString().split('T')[0],
-        time: now.toTimeString().split(' ')[0].slice(0, 5),
+        date: logDate,
+        time: logTime,
         notes: notes.trim() || null,
       });
 
@@ -1353,54 +1361,84 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
 
   return (
     <View style={{ gap: 16 }}>
-      {/* Recommendations */}
-      {recommendations.length > 0 && !showCustom && (
-        <Card>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
-            ⭐ Recomendadas (tus más frecuentes)
+      {/* Header: Manage activities/workouts button */}
+      <Pressable
+        onPress={() => router.push('/activity')}
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: 14,
+          backgroundColor: activityColor + '15',
+          borderRadius: 12,
+          borderWidth: 1,
+          borderColor: activityColor + '30',
+        }}
+      >
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Ionicons name="fitness" size={20} color={activityColor} />
+          <Text style={{ fontSize: 14, fontWeight: '600', color: activityColor }}>
+            Gestionar mis entrenamientos
           </Text>
-          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            {recommendations.map((type) => (
-              <Pressable
-                key={type.id}
-                onPress={() => setSelectedType(type)}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  paddingHorizontal: 14,
-                  paddingVertical: 10,
-                  borderRadius: 20,
-                  backgroundColor: selectedType?.id === type.id ? type.color : colors.cardElevated,
-                  gap: 6,
-                }}
-              >
-                <Ionicons 
-                  name={type.icon as any} 
-                  size={16} 
-                  color={selectedType?.id === type.id ? '#FFFFFF' : type.color} 
-                />
-                <Text style={{
-                  fontSize: 13,
-                  fontWeight: '600',
-                  color: selectedType?.id === type.id ? '#FFFFFF' : colors.text,
-                }}>
-                  {type.name}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-        </Card>
+        </View>
+        <Ionicons name="chevron-forward" size={18} color={activityColor} />
+      </Pressable>
+
+      {/* Title */}
+      <View style={{ marginTop: 4 }}>
+        <Text style={{ fontSize: 20, fontWeight: '700', color: colors.text }}>
+          Registrar Actividad
+        </Text>
+        <Text style={{ fontSize: 14, color: colors.textSecondary, marginTop: 4 }}>
+          Registra una sesión de ejercicio o actividad física
+        </Text>
+      </View>
+
+      {/* Quick recommendations */}
+      {recommendations.length > 0 && !showCustom && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+          {recommendations.map((type) => (
+            <Pressable
+              key={type.id}
+              onPress={() => setSelectedType(type)}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+                borderRadius: 20,
+                backgroundColor: selectedType?.id === type.id ? type.color : colors.cardElevated,
+                borderWidth: 1,
+                borderColor: selectedType?.id === type.id ? type.color : colors.border,
+                gap: 6,
+              }}
+            >
+              <Ionicons 
+                name={type.icon as any} 
+                size={16} 
+                color={selectedType?.id === type.id ? '#FFFFFF' : type.color} 
+              />
+              <Text style={{
+                fontSize: 13,
+                fontWeight: '600',
+                color: selectedType?.id === type.id ? '#FFFFFF' : colors.text,
+              }}>
+                {type.name}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
       )}
 
       {/* Activity Type Selection */}
       <Card>
         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>
-            Tipo de actividad
+            {showCustom ? 'Actividad personalizada' : 'Todas las actividades'}
           </Text>
           <Pressable onPress={() => setShowCustom(!showCustom)}>
             <Text style={{ fontSize: 13, color: activityColor, fontWeight: '600' }}>
-              {showCustom ? 'Ver lista' : '+ Personalizada'}
+              {showCustom ? 'Ver lista' : '+ Nueva'}
             </Text>
           </Pressable>
         </View>
@@ -1453,7 +1491,7 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
         )}
       </Card>
 
-      {/* Duration and Intensity */}
+      {/* Duration and Distance */}
       <Card>
         <View style={{ flexDirection: 'row', gap: 12 }}>
           <View style={{ flex: 1 }}>
@@ -1467,7 +1505,8 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
               placeholderTextColor={colors.textMuted}
               keyboardType="numeric"
               style={{
-                fontSize: 16,
+                fontSize: 18,
+                fontWeight: '700',
                 color: colors.text,
                 padding: 12,
                 backgroundColor: colors.cardElevated,
@@ -1483,11 +1522,12 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
             <TextInput
               value={distance}
               onChangeText={setDistance}
-              placeholder="Opcional"
+              placeholder="—"
               placeholderTextColor={colors.textMuted}
               keyboardType="decimal-pad"
               style={{
-                fontSize: 16,
+                fontSize: 18,
+                fontWeight: '700',
                 color: colors.text,
                 padding: 12,
                 backgroundColor: colors.cardElevated,
@@ -1538,6 +1578,111 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
         </View>
       </Card>
 
+      {/* Timestamp */}
+      <Card>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
+          ¿Cuándo realizaste la actividad?
+        </Text>
+        
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: useCurrentTime ? 0 : 14 }}>
+          <Pressable
+            onPress={() => setUseCurrentTime(true)}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              padding: 14,
+              borderRadius: 12,
+              backgroundColor: useCurrentTime ? activityColor : colors.cardElevated,
+            }}
+          >
+            <Ionicons 
+              name="time" 
+              size={18} 
+              color={useCurrentTime ? '#FFFFFF' : colors.textSecondary} 
+            />
+            <Text style={{
+              fontSize: 14,
+              fontWeight: '600',
+              color: useCurrentTime ? '#FFFFFF' : colors.textSecondary,
+            }}>
+              Ahora mismo
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setUseCurrentTime(false)}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              padding: 14,
+              borderRadius: 12,
+              backgroundColor: !useCurrentTime ? activityColor : colors.cardElevated,
+            }}
+          >
+            <Ionicons 
+              name="calendar" 
+              size={18} 
+              color={!useCurrentTime ? '#FFFFFF' : colors.textSecondary} 
+            />
+            <Text style={{
+              fontSize: 14,
+              fontWeight: '600',
+              color: !useCurrentTime ? '#FFFFFF' : colors.textSecondary,
+            }}>
+              Otra hora
+            </Text>
+          </Pressable>
+        </View>
+
+        {!useCurrentTime && (
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>
+                Fecha
+              </Text>
+              <TextInput
+                value={customDate}
+                onChangeText={setCustomDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textMuted}
+                style={{
+                  fontSize: 15,
+                  color: colors.text,
+                  padding: 12,
+                  backgroundColor: colors.cardElevated,
+                  borderRadius: 10,
+                  textAlign: 'center',
+                }}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>
+                Hora
+              </Text>
+              <TextInput
+                value={customTime}
+                onChangeText={setCustomTime}
+                placeholder="HH:MM"
+                placeholderTextColor={colors.textMuted}
+                style={{
+                  fontSize: 15,
+                  color: colors.text,
+                  padding: 12,
+                  backgroundColor: colors.cardElevated,
+                  borderRadius: 10,
+                  textAlign: 'center',
+                }}
+              />
+            </View>
+          </View>
+        )}
+      </Card>
+
       {/* Calories (optional) */}
       <Card>
         <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
@@ -1567,24 +1712,29 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
         <TextInput
           value={notes}
           onChangeText={setNotes}
-          placeholder="Añade notas adicionales..."
+          placeholder="Cómo te sentiste, detalles del entrenamiento..."
           placeholderTextColor={colors.textMuted}
           multiline
-          numberOfLines={3}
+          numberOfLines={2}
           style={{
             fontSize: 15,
             color: colors.text,
             padding: 12,
             backgroundColor: colors.cardElevated,
             borderRadius: 10,
-            minHeight: 80,
+            minHeight: 60,
             textAlignVertical: 'top',
           }}
         />
       </Card>
 
       <Button onPress={handleSave} loading={loading} fullWidth size="lg">
-        Guardar actividad
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+          <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
+            Guardar actividad
+          </Text>
+        </View>
       </Button>
     </View>
   );

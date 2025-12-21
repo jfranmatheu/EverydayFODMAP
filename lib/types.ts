@@ -481,10 +481,33 @@ export interface TreatmentLog {
 }
 
 // ============================================================
-// ACTIVITIES
+// ACTIVITIES & TRAINING
 // ============================================================
 
-export type ActivityType = 
+// Frequency type for scheduled activities
+export type FrequencyType = 'daily' | 'weekly' | 'specific_days' | 'interval' | 'monthly';
+
+export const FREQUENCY_TYPE_LABELS: Record<FrequencyType, string> = {
+  daily: 'Todos los días',
+  weekly: 'Una vez por semana',
+  specific_days: 'Días específicos',
+  interval: 'Cada X días',
+  monthly: 'Una vez al mes',
+};
+
+// Activity type from database
+export interface ActivityType {
+  id: number;
+  name: string;
+  icon: string;
+  color: string;
+  is_custom?: boolean;
+  usage_count: number;
+  created_at?: string;
+}
+
+// Default activity type slugs
+export type ActivityTypeSlug = 
   | 'walking'
   | 'running'
   | 'cycling'
@@ -497,36 +520,71 @@ export type ActivityType =
   | 'hiking'
   | 'other';
 
-export const ACTIVITY_TYPES: { id: ActivityType; label: string; icon: string }[] = [
-  { id: 'walking', label: 'Caminar', icon: 'walk' },
-  { id: 'running', label: 'Correr', icon: 'fitness' },
-  { id: 'cycling', label: 'Ciclismo', icon: 'bicycle' },
-  { id: 'swimming', label: 'Natación', icon: 'water' },
-  { id: 'yoga', label: 'Yoga', icon: 'body' },
-  { id: 'gym', label: 'Gimnasio', icon: 'barbell' },
-  { id: 'stretching', label: 'Estiramientos', icon: 'accessibility' },
-  { id: 'meditation', label: 'Meditación', icon: 'leaf' },
-  { id: 'dancing', label: 'Baile', icon: 'musical-notes' },
-  { id: 'hiking', label: 'Senderismo', icon: 'trail-sign' },
-  { id: 'other', label: 'Otro', icon: 'ellipse' },
+export const DEFAULT_ACTIVITY_TYPES: { slug: ActivityTypeSlug; name: string; icon: string; color: string }[] = [
+  { slug: 'walking', name: 'Caminar', icon: 'walk', color: '#4CAF50' },
+  { slug: 'running', name: 'Correr', icon: 'fitness', color: '#FF5722' },
+  { slug: 'cycling', name: 'Ciclismo', icon: 'bicycle', color: '#2196F3' },
+  { slug: 'swimming', name: 'Natación', icon: 'water', color: '#00BCD4' },
+  { slug: 'yoga', name: 'Yoga', icon: 'body', color: '#9C27B0' },
+  { slug: 'gym', name: 'Gimnasio', icon: 'barbell', color: '#FF9800' },
+  { slug: 'stretching', name: 'Estiramientos', icon: 'accessibility', color: '#E91E63' },
+  { slug: 'meditation', name: 'Meditación', icon: 'leaf', color: '#8BC34A' },
+  { slug: 'dancing', name: 'Baile', icon: 'musical-notes', color: '#F44336' },
+  { slug: 'hiking', name: 'Senderismo', icon: 'trail-sign', color: '#795548' },
+  { slug: 'other', name: 'Otro', icon: 'ellipse', color: '#607D8B' },
 ];
 
-export type IntensityLevel = 'low' | 'medium' | 'high';
+export type IntensityLevel = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
-export const INTENSITY_LABELS: Record<IntensityLevel, string> = {
-  low: 'Baja',
-  medium: 'Media',
-  high: 'Alta',
+export const INTENSITY_LABELS: Record<number, string> = {
+  1: 'Muy ligera',
+  2: 'Ligera',
+  3: 'Ligera-moderada',
+  4: 'Moderada',
+  5: 'Moderada',
+  6: 'Moderada-intensa',
+  7: 'Intensa',
+  8: 'Muy intensa',
+  9: 'Máxima',
+  10: 'Agotamiento total',
 };
 
 export interface ActivityLog {
   id: number;
-  activity_type: ActivityType;
-  custom_name?: string;
+  activity_type_id: number;
   duration_minutes: number;
   intensity: IntensityLevel;
+  distance_km?: number;
+  calories?: number;
   date: string;
   time: string;
+  notes?: string;
+  created_at: string;
+}
+
+// Scheduled activity (training program)
+export interface ScheduledActivity {
+  id: number;
+  activity_type_id: number;
+  name: string;
+  description?: string;
+  duration_minutes: number;
+  frequency_type: FrequencyType;
+  frequency_value?: string;
+  start_date: string;
+  end_date?: string;
+  reminder_enabled: boolean;
+  reminder_time?: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ScheduledActivityLog {
+  id: number;
+  scheduled_activity_id: number;
+  date: string;
+  status: 'completed' | 'skipped' | 'partial';
+  actual_duration_minutes?: number;
   notes?: string;
   created_at: string;
 }
