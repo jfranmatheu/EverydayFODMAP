@@ -1,36 +1,36 @@
-import React, { useState } from 'react';
-import { 
-  View, 
-  Text, 
-  ScrollView, 
-  Pressable,
-  TextInput,
-  Alert,
-  Modal,
-  ActivityIndicator,
-} from 'react-native';
+import { Button, Card } from '@/components/ui';
+import { useTheme } from '@/contexts/ThemeContext';
+import { getDatabase, insertRow } from '@/lib/database';
+import {
+    ActivityLog,
+    ActivityType,
+    BRISTOL_SCALE,
+    BristolType,
+    INTENSITY_LABELS,
+    MEAL_TYPE_LABELS,
+    MealType,
+    ScheduledActivity,
+    SYMPTOM_TYPES,
+    Treatment,
+    TreatmentLog,
+} from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import Animated, { 
-  FadeInDown,
-  FadeInRight,
+import React, { useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Modal,
+    Pressable,
+    ScrollView,
+    Text,
+    TextInput,
+    View,
+} from 'react-native';
+import Animated, {
+    FadeInDown,
+    FadeInRight,
 } from 'react-native-reanimated';
-import { useTheme } from '@/contexts/ThemeContext';
-import { Card, Button } from '@/components/ui';
-import { insertRow, getDatabase } from '@/lib/database';
-import { 
-  SYMPTOM_TYPES, 
-  BRISTOL_SCALE, 
-  BristolType, 
-  MEAL_TYPE_LABELS, 
-  MealType, 
-  ActivityType, 
-  INTENSITY_LABELS,
-  Treatment,
-  TreatmentLog,
-  ScheduledActivity,
-  ActivityLog,
-} from '@/lib/types';
 
 type LogType = 'meal' | 'water' | 'symptom' | 'bowel' | 'treatment' | 'activity';
 
@@ -609,6 +609,48 @@ function SymptomForm({ colors, onSuccess }: { colors: any; onSuccess: () => void
   const [intensity, setIntensity] = useState(5);
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
+  
+  // Timestamp fields
+  const [useCurrentTime, setUseCurrentTime] = useState(true);
+  const [customDate, setCustomDate] = useState(new Date().toISOString().split('T')[0]);
+  const [customTime, setCustomTime] = useState(new Date().toTimeString().slice(0, 5));
+  
+  // Cause/correlation fields
+  const [selectedTreatment, setSelectedTreatment] = useState<number | null>(null);
+  const [selectedMeal, setSelectedMeal] = useState<number | null>(null);
+  const [stressType, setStressType] = useState<'personal' | 'professional' | 'other' | null>(null);
+  const [stressNotes, setStressNotes] = useState('');
+  
+  // Data for dropdowns
+  const [treatments, setTreatments] = useState<{ id: number; name: string }[]>([]);
+  const [meals, setMeals] = useState<{ id: number; name: string; date: string; time: string }[]>([]);
+
+  React.useEffect(() => {
+    loadDropdownData();
+  }, []);
+
+  const loadDropdownData = async () => {
+    try {
+      const db = await getDatabase();
+      
+      // Load recent treatments
+      const treatmentsData = await db.getAllAsync<{ id: number; name: string }>(
+        'SELECT id, name FROM treatments WHERE is_active = 1 ORDER BY name'
+      );
+      setTreatments(treatmentsData || []);
+      
+      // Load recent meals (last 7 days)
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      const mealsData = await db.getAllAsync<{ id: number; name: string; date: string; time: string }>(
+        `SELECT id, name, date, time FROM meals WHERE date >= ? ORDER BY date DESC, time DESC LIMIT 20`,
+        [sevenDaysAgo.toISOString().split('T')[0]]
+      );
+      setMeals(mealsData || []);
+    } catch (error) {
+      console.error('Error loading dropdown data:', error);
+    }
+  };
 
   const handleSave = async () => {
     if (!symptomType) {
@@ -619,12 +661,19 @@ function SymptomForm({ colors, onSuccess }: { colors: any; onSuccess: () => void
     setLoading(true);
     try {
       const now = new Date();
+      const logDate = useCurrentTime ? now.toISOString().split('T')[0] : customDate;
+      const logTime = useCurrentTime ? now.toTimeString().slice(0, 5) : customTime;
+      
       await insertRow('symptoms', {
         type: symptomType,
         intensity,
-        date: now.toISOString().split('T')[0],
-        time: now.toTimeString().split(' ')[0].slice(0, 5),
+        date: logDate,
+        time: logTime,
         notes: notes.trim() || null,
+        treatment_id: selectedTreatment || null,
+        meal_id: selectedMeal || null,
+        stress_type: stressType || null,
+        stress_notes: (stressType === 'other' && stressNotes.trim()) ? stressNotes.trim() : null,
       });
       Alert.alert('¡Guardado!', 'Síntoma registrado correctamente');
       onSuccess();
@@ -698,6 +747,309 @@ function SymptomForm({ colors, onSuccess }: { colors: any; onSuccess: () => void
               </Text>
             </Pressable>
           ))}
+        </View>
+      </Card>
+
+      {/* Timestamp */}
+      <Card>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
+          ¿Cuándo apareció el síntoma?
+        </Text>
+        
+        <View style={{ flexDirection: 'row', gap: 8, marginBottom: useCurrentTime ? 0 : 14 }}>
+          <Pressable
+            onPress={() => setUseCurrentTime(true)}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              padding: 14,
+              borderRadius: 12,
+              backgroundColor: useCurrentTime ? colors.symptom : colors.cardElevated,
+            }}
+          >
+            <Ionicons 
+              name="time" 
+              size={18} 
+              color={useCurrentTime ? '#FFFFFF' : colors.textSecondary} 
+            />
+            <Text style={{
+              fontSize: 14,
+              fontWeight: '600',
+              color: useCurrentTime ? '#FFFFFF' : colors.textSecondary,
+            }}>
+              Ahora mismo
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => setUseCurrentTime(false)}
+            style={{
+              flex: 1,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 8,
+              padding: 14,
+              borderRadius: 12,
+              backgroundColor: !useCurrentTime ? colors.symptom : colors.cardElevated,
+            }}
+          >
+            <Ionicons 
+              name="calendar" 
+              size={18} 
+              color={!useCurrentTime ? '#FFFFFF' : colors.textSecondary} 
+            />
+            <Text style={{
+              fontSize: 14,
+              fontWeight: '600',
+              color: !useCurrentTime ? '#FFFFFF' : colors.textSecondary,
+            }}>
+              Otra hora
+            </Text>
+          </Pressable>
+        </View>
+
+        {!useCurrentTime && (
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>
+                Fecha
+              </Text>
+              <TextInput
+                value={customDate}
+                onChangeText={setCustomDate}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor={colors.textMuted}
+                style={{
+                  fontSize: 15,
+                  color: colors.text,
+                  padding: 12,
+                  backgroundColor: colors.cardElevated,
+                  borderRadius: 10,
+                  textAlign: 'center',
+                }}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>
+                Hora
+              </Text>
+              <TextInput
+                value={customTime}
+                onChangeText={setCustomTime}
+                placeholder="HH:MM"
+                placeholderTextColor={colors.textMuted}
+                style={{
+                  fontSize: 15,
+                  color: colors.text,
+                  padding: 12,
+                  backgroundColor: colors.cardElevated,
+                  borderRadius: 10,
+                  textAlign: 'center',
+                }}
+              />
+            </View>
+          </View>
+        )}
+      </Card>
+
+      {/* Possible Causes / Correlation */}
+      <Card>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
+          Posible causa o correlación (opcional)
+        </Text>
+        
+        {/* Treatment */}
+        <View style={{ marginBottom: 12 }}>
+          <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 6 }}>
+            ¿Relacionado con un medicamento?
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            <Pressable
+              onPress={() => setSelectedTreatment(null)}
+              style={{
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+                borderRadius: 12,
+                backgroundColor: selectedTreatment === null ? colors.cardElevated : colors.card,
+                borderWidth: 1,
+                borderColor: selectedTreatment === null ? colors.border : 'transparent',
+              }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary }}>
+                Ninguno
+              </Text>
+            </Pressable>
+            {treatments.map((treatment) => (
+              <Pressable
+                key={treatment.id}
+                onPress={() => setSelectedTreatment(treatment.id)}
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  borderRadius: 12,
+                  backgroundColor: selectedTreatment === treatment.id ? colors.treatment : colors.cardElevated,
+                }}
+              >
+                <Text style={{
+                  fontSize: 13,
+                  fontWeight: '600',
+                  color: selectedTreatment === treatment.id ? '#FFFFFF' : colors.textSecondary,
+                }}>
+                  {treatment.name}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Meal */}
+        <View style={{ marginBottom: 12 }}>
+          <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 6 }}>
+            ¿Relacionado con una comida?
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+            <Pressable
+              onPress={() => setSelectedMeal(null)}
+              style={{
+                paddingHorizontal: 14,
+                paddingVertical: 10,
+                borderRadius: 12,
+                backgroundColor: selectedMeal === null ? colors.cardElevated : colors.card,
+                borderWidth: 1,
+                borderColor: selectedMeal === null ? colors.border : 'transparent',
+              }}
+            >
+              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary }}>
+                Ninguna
+              </Text>
+            </Pressable>
+            {meals.slice(0, 10).map((meal) => (
+              <Pressable
+                key={meal.id}
+                onPress={() => setSelectedMeal(meal.id)}
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  borderRadius: 12,
+                  backgroundColor: selectedMeal === meal.id ? colors.primary : colors.cardElevated,
+                }}
+              >
+                <Text style={{
+                  fontSize: 13,
+                  fontWeight: '600',
+                  color: selectedMeal === meal.id ? '#FFFFFF' : colors.textSecondary,
+                }}>
+                  {meal.name || 'Comida'} {meal.date}
+                </Text>
+              </Pressable>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Stress */}
+        <View>
+          <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 6 }}>
+            ¿Relacionado con estrés?
+          </Text>
+          <View style={{ flexDirection: 'row', gap: 8, marginBottom: stressType === 'other' ? 10 : 0 }}>
+            <Pressable
+              onPress={() => setStressType(stressType === 'personal' ? null : 'personal')}
+              style={{
+                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                padding: 12,
+                borderRadius: 12,
+                backgroundColor: stressType === 'personal' ? '#E91E63' : colors.cardElevated,
+              }}
+            >
+              <Ionicons 
+                name={stressType === 'personal' ? 'heart' : 'heart-outline'} 
+                size={16} 
+                color={stressType === 'personal' ? '#FFFFFF' : colors.textSecondary} 
+              />
+              <Text style={{
+                fontSize: 13,
+                fontWeight: '600',
+                color: stressType === 'personal' ? '#FFFFFF' : colors.textSecondary,
+              }}>
+                Personal
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setStressType(stressType === 'professional' ? null : 'professional')}
+              style={{
+                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                padding: 12,
+                borderRadius: 12,
+                backgroundColor: stressType === 'professional' ? '#FF9800' : colors.cardElevated,
+              }}
+            >
+              <Ionicons 
+                name={stressType === 'professional' ? 'briefcase' : 'briefcase-outline'} 
+                size={16} 
+                color={stressType === 'professional' ? '#FFFFFF' : colors.textSecondary} 
+              />
+              <Text style={{
+                fontSize: 13,
+                fontWeight: '600',
+                color: stressType === 'professional' ? '#FFFFFF' : colors.textSecondary,
+              }}>
+                Profesional
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setStressType(stressType === 'other' ? null : 'other')}
+              style={{
+                flex: 1,
+                flexDirection: 'row',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 6,
+                padding: 12,
+                borderRadius: 12,
+                backgroundColor: stressType === 'other' ? '#9C27B0' : colors.cardElevated,
+              }}
+            >
+              <Ionicons 
+                name={stressType === 'other' ? 'ellipse' : 'ellipse-outline'} 
+                size={16} 
+                color={stressType === 'other' ? '#FFFFFF' : colors.textSecondary} 
+              />
+              <Text style={{
+                fontSize: 13,
+                fontWeight: '600',
+                color: stressType === 'other' ? '#FFFFFF' : colors.textSecondary,
+              }}>
+                Otro
+              </Text>
+            </Pressable>
+          </View>
+          {stressType === 'other' && (
+            <TextInput
+              value={stressNotes}
+              onChangeText={setStressNotes}
+              placeholder="Especifica el motivo..."
+              placeholderTextColor={colors.textMuted}
+              style={{
+                fontSize: 14,
+                color: colors.text,
+                padding: 12,
+                backgroundColor: colors.cardElevated,
+                borderRadius: 10,
+                marginTop: 8,
+              }}
+            />
+          )}
         </View>
       </Card>
 

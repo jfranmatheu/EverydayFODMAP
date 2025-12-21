@@ -354,7 +354,12 @@ export interface Symptom {
   intensity: number; // 1-10
   date: string;
   time: string;
+  duration_minutes?: number;
   notes?: string;
+  meal_id?: number;
+  treatment_id?: number;
+  stress_type?: 'personal' | 'professional' | 'other';
+  stress_notes?: string;
   created_at: string;
 }
 

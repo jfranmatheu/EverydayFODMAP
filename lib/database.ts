@@ -762,6 +762,8 @@ export async function initDatabase(): Promise<void> {
       notes TEXT,
       meal_id INTEGER REFERENCES meals(id) ON DELETE SET NULL,
       treatment_id INTEGER REFERENCES treatments(id) ON DELETE SET NULL,
+      stress_type TEXT CHECK(stress_type IN ('personal', 'professional', 'other')) NULL,
+      stress_notes TEXT,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
