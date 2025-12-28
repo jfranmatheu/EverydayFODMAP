@@ -4,9 +4,9 @@ import { Tabs } from 'expo-router';
 import React from 'react';
 import { Platform } from 'react-native';
 import Animated, {
-    useAnimatedStyle,
-    useSharedValue,
-    withSpring
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring
 } from 'react-native-reanimated';
 
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
@@ -87,6 +87,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="log"
+        options={{
+          title: 'Diario',
+          tabBarIcon: ({ color, focused }) => (
+            <TabIcon name={focused ? 'today' : 'today-outline'} color={color} focused={focused} />
+          ),
+        }}
+      />
+      <Tabs.Screen
         name="foods"
         options={{
           title: 'Alimentos',
@@ -105,11 +114,11 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="log"
+        name="analysis"
         options={{
-          title: 'Diario',
+          title: 'Análisis',
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon name={focused ? 'today' : 'today-outline'} color={color} focused={focused} />
+            <TabIcon name={focused ? 'analytics' : 'analytics-outline'} color={color} focused={focused} />
           ),
         }}
       />
@@ -118,15 +127,6 @@ export default function TabLayout() {
         options={{
           href: null, // Functionality moved to log tab
           title: 'Calendario',
-        }}
-      />
-      <Tabs.Screen
-        name="analysis"
-        options={{
-          title: 'Análisis',
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon name={focused ? 'analytics' : 'analytics-outline'} color={color} focused={focused} />
-          ),
         }}
       />
       <Tabs.Screen
