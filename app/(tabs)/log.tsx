@@ -1,68 +1,404 @@
 import { Button, Card } from '@/components/ui';
+import { useDatabase } from '@/contexts/DatabaseContext';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getDatabase, insertRow } from '@/lib/database';
 import {
-    ActivityLog,
-    ActivityType,
-    BRISTOL_SCALE,
-    BristolType,
-    INTENSITY_LABELS,
-    MEAL_TYPE_LABELS,
-    MealType,
-    ScheduledActivity,
-    SYMPTOM_TYPES,
-    Treatment,
-    TreatmentLog,
+  ActivityType,
+  BRISTOL_SCALE,
+  BristolType,
+  INTENSITY_LABELS,
+  MEAL_TYPE_LABELS,
+  MealType,
+  SYMPTOM_TYPES,
+  Treatment
 } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    Pressable,
-    ScrollView,
-    Text,
-    TextInput,
-    View,
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Pressable,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 import Animated, {
-    FadeInDown,
-    FadeInRight,
+  FadeInDown
 } from 'react-native-reanimated';
 
-type LogType = 'meal' | 'water' | 'symptom' | 'bowel' | 'treatment' | 'activity';
+type LogType = 'water' | 'symptom' | 'bowel' | 'treatment' | 'activity';
 
-interface LogOption {
-  id: LogType;
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-  color: string;
+// Meal types order for display
+const MEAL_TYPES_ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack', 'other'];
+
+interface MealWithItems {
+  id: number;
+  name: string;
+  meal_type: MealType;
+  date: string;
+  time: string;
+  notes: string | null;
+  items: MealItem[];
 }
+
+interface MealItem {
+  id: number;
+  meal_id: number;
+  food_id: number | null;
+  recipe_id: number | null;
+  name: string;
+  quantity: number;
+  unit: string;
+  fodmap_level?: string;
+}
+
+interface DayDetails {
+  meals: MealWithItems[];
+  water: any[];
+  symptoms: any[];
+  bowelMovements: any[];
+  treatments: any[];
+  activities: any[];
+}
+
+const DAY_NAMES = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+const MONTH_NAMES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 
 export default function LogScreen() {
   const { colors } = useTheme();
+  const { isReady } = useDatabase();
   const router = useRouter();
-  const params = useLocalSearchParams<{ type?: LogType }>();
-  const [activeType, setActiveType] = useState<LogType | null>(params.type || null);
+  
+  // Date navigation
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [pickerYear, setPickerYear] = useState(new Date().getFullYear());
+  const [pickerMonth, setPickerMonth] = useState(new Date().getMonth());
+  
+  // Day data
+  const [dayDetails, setDayDetails] = useState<DayDetails | null>(null);
+  const [loading, setLoading] = useState(true);
+  
+  // Active form modal (for non-meal types)
+  const [activeFormType, setActiveFormType] = useState<LogType | null>(null);
+  
+  // Meal editing
+  const [editingMealType, setEditingMealType] = useState<MealType | null>(null);
+  const [showMealEditor, setShowMealEditor] = useState(false);
 
   const activityColor = '#FF9800';
-  
-  const logOptions: LogOption[] = [
-    { id: 'meal', icon: 'restaurant', label: 'Comida', color: colors.primary },
-    { id: 'water', icon: 'water', label: 'Agua', color: colors.water },
-    { id: 'activity', icon: 'fitness', label: 'Actividad', color: activityColor },
-    { id: 'symptom', icon: 'pulse', label: 'Síntoma', color: colors.symptom },
-    { id: 'bowel', icon: 'medical', label: 'Deposición', color: colors.bowel },
-    { id: 'treatment', icon: 'medkit', label: 'Tratamiento', color: colors.treatment },
-  ];
+  const today = new Date().toISOString().split('T')[0];
 
-  const handleBack = () => {
-    setActiveType(null);
+  useEffect(() => {
+    if (isReady) {
+      loadDayDetails();
+    }
+  }, [isReady, selectedDate]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (isReady) {
+        loadDayDetails();
+      }
+    }, [isReady, selectedDate])
+  );
+
+  const loadDayDetails = async () => {
+    setLoading(true);
+    try {
+      const db = await getDatabase();
+
+      // Load meals with their items
+      const mealsRaw = await db.getAllAsync(
+        'SELECT * FROM meals WHERE date = ? ORDER BY time',
+        [selectedDate]
+      );
+      
+      const mealsWithItems: MealWithItems[] = [];
+      for (const meal of mealsRaw as any[]) {
+        const items = await db.getAllAsync(
+          `SELECT mi.*, f.name as food_name, f.fodmap_level as food_fodmap, r.name as recipe_name, r.fodmap_level as recipe_fodmap
+           FROM meal_items mi
+           LEFT JOIN foods f ON mi.food_id = f.id
+           LEFT JOIN recipes r ON mi.recipe_id = r.id
+           WHERE mi.meal_id = ?`,
+          [meal.id]
+        );
+        
+        const processedItems = items.map((item: any) => ({
+          ...item,
+          name: item.name || item.food_name || item.recipe_name || 'Item',
+          fodmap_level: item.fodmap_level || item.food_fodmap || item.recipe_fodmap,
+        }));
+        
+        mealsWithItems.push({
+          ...meal,
+          items: processedItems,
+        });
+      }
+
+      const water = await db.getAllAsync(
+        'SELECT * FROM water_intake WHERE date = ? ORDER BY time',
+        [selectedDate]
+      );
+
+      const symptoms = await db.getAllAsync(
+        'SELECT * FROM symptoms WHERE date = ? ORDER BY time',
+        [selectedDate]
+      );
+
+      const bowelMovements = await db.getAllAsync(
+        'SELECT * FROM bowel_movements WHERE date = ? ORDER BY time',
+        [selectedDate]
+      );
+
+      const treatments = await db.getAllAsync(
+        `SELECT tl.*, t.name, t.dosage_amount, t.dosage_unit 
+         FROM treatment_logs tl 
+         LEFT JOIN treatments t ON tl.treatment_id = t.id 
+         WHERE tl.date = ? ORDER BY tl.time`,
+        [selectedDate]
+      );
+
+      const activities = await db.getAllAsync(
+        `SELECT al.*, at.name as type_name, at.icon, at.color 
+         FROM activity_logs al
+         LEFT JOIN activity_types at ON al.activity_type_id = at.id
+         WHERE al.date = ? ORDER BY al.time`,
+        [selectedDate]
+      );
+
+      setDayDetails({ meals: mealsWithItems, water, symptoms, bowelMovements, treatments, activities });
+    } catch (error) {
+      console.error('Error loading day details:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  if (activeType) {
+  const navigateDay = (direction: number) => {
+    const current = new Date(selectedDate + 'T12:00:00');
+    current.setDate(current.getDate() + direction);
+    setSelectedDate(current.toISOString().split('T')[0]);
+  };
+
+  const goToToday = () => {
+    setSelectedDate(today);
+  };
+
+  const formatSelectedDate = () => {
+    if (selectedDate === today) return 'Hoy';
+    const date = new Date(selectedDate + 'T12:00:00');
+    const dayName = DAY_NAMES[date.getDay()];
+    const day = date.getDate();
+    const month = MONTH_NAMES[date.getMonth()];
+    return `${dayName}, ${day} de ${month}`;
+  };
+
+  const handleOpenDatePicker = () => {
+    const current = new Date(selectedDate + 'T12:00:00');
+    setPickerYear(current.getFullYear());
+    setPickerMonth(current.getMonth());
+    setShowDatePicker(true);
+  };
+
+  const handleSelectDate = (day: number) => {
+    // Build date string directly to avoid timezone issues with Date.toISOString()
+    const dateStr = `${pickerYear}-${String(pickerMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    setSelectedDate(dateStr);
+    setShowDatePicker(false);
+  };
+
+  const getDaysInMonth = (year: number, month: number) => {
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
+    // Convert Sunday=0 to Sunday=6 for Monday-first week
+    const dayOfWeek = firstDay.getDay();
+    const startingDay = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const days: (number | null)[] = [];
+    
+    for (let i = 0; i < startingDay; i++) {
+      days.push(null);
+    }
+    for (let i = 1; i <= daysInMonth; i++) {
+      days.push(i);
+    }
+    return days;
+  };
+
+  const handleFormSuccess = () => {
+    setActiveFormType(null);
+    loadDayDetails();
+  };
+
+  const handleMealEditorSuccess = () => {
+    setShowMealEditor(false);
+    setEditingMealType(null);
+    loadDayDetails();
+  };
+
+  const getTotalWater = () => {
+    if (!dayDetails) return 0;
+    return dayDetails.water.reduce((acc, w) => acc + (w.glasses || 0), 0);
+  };
+
+  // Get meal for a specific type
+  const getMealForType = (mealType: MealType): MealWithItems | null => {
+    if (!dayDetails) return null;
+    return dayDetails.meals.find(m => m.meal_type === mealType) || null;
+  };
+
+  const handleEditMeal = (mealType: MealType) => {
+    setEditingMealType(mealType);
+    setShowMealEditor(true);
+  };
+
+  const SectionHeader = ({ 
+    title, 
+    icon, 
+    color, 
+    count,
+    onAdd,
+  }: { 
+    title: string; 
+    icon: keyof typeof Ionicons.glyphMap; 
+    color: string;
+    count: number;
+    onAdd: () => void;
+  }) => (
+    <View style={{ 
+      flexDirection: 'row', 
+      alignItems: 'center', 
+      justifyContent: 'space-between',
+      marginBottom: 12,
+      marginTop: 8,
+    }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View style={{
+          width: 32,
+          height: 32,
+          borderRadius: 10,
+          backgroundColor: color + '20',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <Ionicons name={icon} size={16} color={color} />
+        </View>
+        <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+          {title}
+        </Text>
+        {count > 0 && (
+          <View style={{
+            backgroundColor: color + '20',
+            paddingHorizontal: 8,
+            paddingVertical: 2,
+            borderRadius: 10,
+          }}>
+            <Text style={{ fontSize: 12, fontWeight: '600', color }}>
+              {count}
+            </Text>
+          </View>
+        )}
+      </View>
+      <Pressable
+        onPress={onAdd}
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: 16,
+          backgroundColor: color + '20',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Ionicons name="add" size={18} color={color} />
+      </Pressable>
+    </View>
+  );
+
+  // Meal Type Sub-section Component
+  const MealTypeSection = ({ mealType }: { mealType: MealType }) => {
+    const meal = getMealForType(mealType);
+    const itemCount = meal?.items.length || 0;
+    
+    return (
+      <View style={{
+        padding: 12,
+        backgroundColor: colors.cardElevated,
+        borderRadius: 12,
+        marginBottom: 8,
+      }}>
+        <View style={{ 
+          flexDirection: 'row', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+        }}>
+          <View style={{ flex: 1 }}>
+            <Text style={{ 
+              fontSize: 14, 
+              fontWeight: '600', 
+              color: colors.text,
+              marginBottom: 2,
+            }}>
+              {MEAL_TYPE_LABELS[mealType]}
+            </Text>
+            {itemCount > 0 ? (
+              <View style={{ marginTop: 4 }}>
+                {meal!.items.slice(0, 3).map((item, idx) => (
+                  <Text 
+                    key={item.id || idx} 
+                    style={{ 
+                      fontSize: 12, 
+                      color: colors.textSecondary,
+                      marginTop: idx > 0 ? 2 : 0,
+                    }}
+                    numberOfLines={1}
+                  >
+                    • {item.name}
+                  </Text>
+                ))}
+                {meal!.items.length > 3 && (
+                  <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>
+                    + {meal!.items.length - 3} más
+                  </Text>
+                )}
+              </View>
+            ) : (
+              <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                Sin registrar
+              </Text>
+            )}
+          </View>
+          
+          <Pressable
+            onPress={() => handleEditMeal(mealType)}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: colors.primary + '15',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons 
+              name={itemCount > 0 ? "pencil" : "add"} 
+              size={16} 
+              color={colors.primary} 
+            />
+          </Pressable>
+        </View>
+      </View>
+    );
+  };
+
+  // Check if showing forms or day view
+  if (activeFormType) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background }}>
         <View style={{ 
@@ -72,88 +408,932 @@ export default function LogScreen() {
           borderBottomWidth: 1,
           borderBottomColor: colors.border,
         }}>
-          <Pressable onPress={handleBack} style={{ marginRight: 12 }}>
+          <Pressable onPress={() => setActiveFormType(null)} style={{ marginRight: 12 }}>
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </Pressable>
           <Text style={{ fontSize: 18, fontWeight: '600', color: colors.text }}>
-            {logOptions.find(o => o.id === activeType)?.label}
+            {activeFormType === 'water' && 'Añadir Agua'}
+            {activeFormType === 'activity' && 'Añadir Actividad'}
+            {activeFormType === 'symptom' && 'Añadir Síntoma'}
+            {activeFormType === 'bowel' && 'Añadir Deposición'}
+            {activeFormType === 'treatment' && 'Añadir Tratamiento'}
           </Text>
         </View>
         
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
-          {activeType === 'meal' && <MealForm colors={colors} onSuccess={handleBack} />}
-          {activeType === 'water' && <WaterForm colors={colors} onSuccess={handleBack} />}
-          {activeType === 'activity' && <ActivityForm colors={colors} onSuccess={handleBack} />}
-          {activeType === 'symptom' && <SymptomForm colors={colors} onSuccess={handleBack} />}
-          {activeType === 'bowel' && <BowelForm colors={colors} onSuccess={handleBack} />}
-          {activeType === 'treatment' && <TreatmentForm colors={colors} onSuccess={handleBack} />}
+          {activeFormType === 'water' && <WaterForm colors={colors} onSuccess={handleFormSuccess} selectedDate={selectedDate} />}
+          {activeFormType === 'activity' && <ActivityForm colors={colors} onSuccess={handleFormSuccess} selectedDate={selectedDate} router={router} />}
+          {activeFormType === 'symptom' && <SymptomForm colors={colors} onSuccess={handleFormSuccess} selectedDate={selectedDate} />}
+          {activeFormType === 'bowel' && <BowelForm colors={colors} onSuccess={handleFormSuccess} selectedDate={selectedDate} />}
+          {activeFormType === 'treatment' && <TreatmentForm colors={colors} onSuccess={handleFormSuccess} selectedDate={selectedDate} router={router} />}
         </ScrollView>
       </View>
     );
   }
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ padding: 16 }}
-    >
-      <Animated.View entering={FadeInDown.delay(100).springify()}>
-        <Text style={{ 
-          fontSize: 24, 
-          fontWeight: '700', 
-          color: colors.text,
-          marginBottom: 8,
+    <>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* Date Navigation Header */}
+        <View style={{ 
+          flexDirection: 'row', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          backgroundColor: colors.surface,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
         }}>
-          ¿Qué quieres registrar?
-        </Text>
-        <Text style={{ 
-          fontSize: 15, 
-          color: colors.textSecondary,
-          marginBottom: 24,
-        }}>
-          Selecciona una opción para añadir un nuevo registro
-        </Text>
-      </Animated.View>
-
-      <View style={{ gap: 12 }}>
-        {logOptions.map((option, index) => (
-          <Animated.View 
-            key={option.id}
-            entering={FadeInRight.delay(150 + index * 50).springify()}
+          <TouchableOpacity 
+            onPress={() => navigateDay(-1)}
+            activeOpacity={0.7}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: colors.card,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
           >
-            <Card onPress={() => setActiveType(option.id)}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
+            <Ionicons name="chevron-back" size={20} color={colors.text} />
+          </TouchableOpacity>
+          
+          <TouchableOpacity 
+            onPress={handleOpenDatePicker}
+            activeOpacity={0.7}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+          >
+            <Text style={{ 
+              fontSize: 17, 
+              fontWeight: '700', 
+              color: colors.text,
+            }}>
+              {formatSelectedDate()}
+            </Text>
+            <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            onPress={() => navigateDay(1)}
+            activeOpacity={0.7}
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: colors.card,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <Ionicons name="chevron-forward" size={20} color={colors.text} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Go to Today Button (if not today) */}
+        {selectedDate !== today && (
+          <Pressable
+            onPress={goToToday}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: 6,
+              paddingVertical: 10,
+              backgroundColor: colors.primary + '15',
+            }}
+          >
+            <Ionicons name="today" size={16} color={colors.primary} />
+            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.primary }}>
+              Ir a Hoy
+            </Text>
+          </Pressable>
+        )}
+
+        {/* Day Content */}
+        {loading ? (
+          <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+        ) : (
+          <ScrollView 
+            style={{ flex: 1 }} 
+            contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Meals Section - By Type */}
+            <Animated.View entering={FadeInDown.delay(100).springify()}>
+              <View style={{ 
+                flexDirection: 'row', 
+                alignItems: 'center', 
+                gap: 10,
+                marginBottom: 12,
+                marginTop: 8,
+              }}>
                 <View style={{
-                  width: 52,
-                  height: 52,
-                  borderRadius: 26,
-                  backgroundColor: option.color + '20',
+                  width: 32,
+                  height: 32,
+                  borderRadius: 10,
+                  backgroundColor: colors.primary + '20',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}>
-                  <Ionicons name={option.icon} size={26} color={option.color} />
+                  <Ionicons name="restaurant" size={16} color={colors.primary} />
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ 
-                    fontSize: 17, 
-                    fontWeight: '600', 
-                    color: colors.text,
-                  }}>
-                    {option.label}
+                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+                  Comidas
+                </Text>
+              </View>
+              
+              <Card style={{ padding: 12, marginBottom: 16 }}>
+                {MEAL_TYPES_ORDER.map((mealType) => (
+                  <MealTypeSection key={mealType} mealType={mealType} />
+                ))}
+              </Card>
+            </Animated.View>
+
+            {/* Water Section */}
+            <Animated.View entering={FadeInDown.delay(150).springify()}>
+              <SectionHeader 
+                title="Agua" 
+                icon="water" 
+                color={colors.water}
+                count={getTotalWater()}
+                onAdd={() => setActiveFormType('water')}
+              />
+              <Card style={{ marginBottom: 16 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+                    Total del día
+                  </Text>
+                  <Text style={{ fontSize: 20, fontWeight: '700', color: colors.water }}>
+                    {getTotalWater()} {getTotalWater() === 1 ? 'vaso' : 'vasos'}
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-              </View>
-            </Card>
-          </Animated.View>
-        ))}
+              </Card>
+            </Animated.View>
+
+            {/* Activities Section */}
+            <Animated.View entering={FadeInDown.delay(200).springify()}>
+              <SectionHeader 
+                title="Actividad" 
+                icon="fitness" 
+                color={activityColor}
+                count={dayDetails?.activities.length || 0}
+                onAdd={() => setActiveFormType('activity')}
+              />
+              {dayDetails && dayDetails.activities.length > 0 ? (
+                <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
+                  {dayDetails.activities.map((activity: any, index) => (
+                    <View 
+                      key={activity.id}
+                      style={{ 
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        padding: 14,
+                        borderBottomWidth: index < dayDetails.activities.length - 1 ? 1 : 0,
+                        borderBottomColor: colors.border,
+                      }}
+                    >
+                      <View style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 18,
+                        backgroundColor: (activity.color || activityColor) + '20',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginRight: 12,
+                      }}>
+                        <Ionicons name={(activity.icon || 'fitness') as any} size={18} color={activity.color || activityColor} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>
+                          {activity.type_name || 'Actividad'}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                          {activity.time} · {activity.duration_minutes} min
+                        </Text>
+                      </View>
+                      <View style={{
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 10,
+                        backgroundColor: activityColor + '20',
+                      }}>
+                        <Text style={{ fontSize: 11, fontWeight: '600', color: activityColor }}>
+                          {activity.intensity}/10
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </Card>
+              ) : (
+                <Card style={{ marginBottom: 16 }}>
+                  <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center' }}>
+                    Sin actividades registradas
+                  </Text>
+                </Card>
+              )}
+            </Animated.View>
+
+            {/* Symptoms Section */}
+            <Animated.View entering={FadeInDown.delay(250).springify()}>
+              <SectionHeader 
+                title="Síntomas" 
+                icon="pulse" 
+                color={colors.symptom}
+                count={dayDetails?.symptoms.length || 0}
+                onAdd={() => setActiveFormType('symptom')}
+              />
+              {dayDetails && dayDetails.symptoms.length > 0 ? (
+                <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
+                  {dayDetails.symptoms.map((symptom, index) => (
+                    <View 
+                      key={symptom.id}
+                      style={{ 
+                        padding: 14,
+                        borderBottomWidth: index < dayDetails.symptoms.length - 1 ? 1 : 0,
+                        borderBottomColor: colors.border,
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>
+                          {symptom.type}
+                        </Text>
+                        <View style={{ 
+                          paddingHorizontal: 8, 
+                          paddingVertical: 2, 
+                          borderRadius: 10,
+                          backgroundColor: symptom.intensity <= 3 ? colors.fodmapLow + '20' 
+                            : symptom.intensity <= 6 ? colors.fodmapMedium + '20' 
+                            : colors.fodmapHigh + '20',
+                        }}>
+                          <Text style={{ 
+                            fontSize: 12, 
+                            fontWeight: '600',
+                            color: symptom.intensity <= 3 ? colors.fodmapLow 
+                              : symptom.intensity <= 6 ? colors.fodmapMedium 
+                              : colors.fodmapHigh,
+                          }}>
+                            {symptom.intensity}/10
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                        {symptom.time}
+                      </Text>
+                    </View>
+                  ))}
+                </Card>
+              ) : (
+                <Card style={{ marginBottom: 16 }}>
+                  <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center' }}>
+                    Sin síntomas registrados
+                  </Text>
+                </Card>
+              )}
+            </Animated.View>
+
+            {/* Bowel Movements Section */}
+            <Animated.View entering={FadeInDown.delay(300).springify()}>
+              <SectionHeader 
+                title="Deposiciones" 
+                icon="medical" 
+                color={colors.bowel}
+                count={dayDetails?.bowelMovements.length || 0}
+                onAdd={() => setActiveFormType('bowel')}
+              />
+              {dayDetails && dayDetails.bowelMovements.length > 0 ? (
+                <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
+                  {dayDetails.bowelMovements.map((bm, index) => (
+                    <View 
+                      key={bm.id}
+                      style={{ 
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        padding: 14,
+                        borderBottomWidth: index < dayDetails.bowelMovements.length - 1 ? 1 : 0,
+                        borderBottomColor: colors.border,
+                      }}
+                    >
+                      <Text style={{ fontSize: 24, marginRight: 12 }}>
+                        {BRISTOL_SCALE[bm.bristol_type as keyof typeof BRISTOL_SCALE]?.emoji || '💩'}
+                      </Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>
+                          {BRISTOL_SCALE[bm.bristol_type as keyof typeof BRISTOL_SCALE]?.name || 'Tipo ' + bm.bristol_type}
+                        </Text>
+                        <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                          {bm.time}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </Card>
+              ) : (
+                <Card style={{ marginBottom: 16 }}>
+                  <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center' }}>
+                    Sin deposiciones registradas
+                  </Text>
+                </Card>
+              )}
+            </Animated.View>
+
+            {/* Treatments Section */}
+            <Animated.View entering={FadeInDown.delay(350).springify()}>
+              <SectionHeader 
+                title="Tratamientos" 
+                icon="medkit" 
+                color={colors.treatment}
+                count={dayDetails?.treatments.length || 0}
+                onAdd={() => setActiveFormType('treatment')}
+              />
+              {dayDetails && dayDetails.treatments.length > 0 ? (
+                <Card style={{ padding: 0, overflow: 'hidden' }}>
+                  {dayDetails.treatments.map((treatment, index) => (
+                    <View 
+                      key={treatment.id}
+                      style={{ 
+                        padding: 14,
+                        borderBottomWidth: index < dayDetails.treatments.length - 1 ? 1 : 0,
+                        borderBottomColor: colors.border,
+                      }}
+                    >
+                      <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>
+                        {treatment.treatment_name || treatment.name || 'Tratamiento'}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                        {treatment.time}
+                        {treatment.dosage_amount ? ` · ${treatment.dosage_amount} ${treatment.dosage_unit || ''}` : ''}
+                      </Text>
+                    </View>
+                  ))}
+                </Card>
+              ) : (
+                <Card>
+                  <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center' }}>
+                    Sin tratamientos registrados
+                  </Text>
+                </Card>
+              )}
+            </Animated.View>
+          </ScrollView>
+        )}
       </View>
-    </ScrollView>
+
+      {/* Date Picker Modal */}
+      <Modal
+        visible={showDatePicker}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowDatePicker(false)}
+      >
+        <Pressable 
+          style={{ 
+            flex: 1, 
+            backgroundColor: 'rgba(0,0,0,0.5)', 
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 20,
+          }}
+          onPress={() => setShowDatePicker(false)}
+        >
+          <Pressable 
+            style={{ 
+              backgroundColor: colors.card, 
+              borderRadius: 20,
+              padding: 16,
+              width: '100%',
+              maxWidth: 360,
+            }}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {/* Month/Year Navigation */}
+            <View style={{ 
+              flexDirection: 'row', 
+              alignItems: 'center', 
+              justifyContent: 'space-between',
+              marginBottom: 16,
+            }}>
+              <Pressable
+                onPress={() => {
+                  if (pickerMonth === 0) {
+                    setPickerMonth(11);
+                    setPickerYear(pickerYear - 1);
+                  } else {
+                    setPickerMonth(pickerMonth - 1);
+                  }
+                }}
+                style={{ padding: 8 }}
+              >
+                <Ionicons name="chevron-back" size={24} color={colors.text} />
+              </Pressable>
+              
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>
+                {MONTH_NAMES[pickerMonth].charAt(0).toUpperCase() + MONTH_NAMES[pickerMonth].slice(1)} {pickerYear}
+              </Text>
+              
+              <Pressable
+                onPress={() => {
+                  if (pickerMonth === 11) {
+                    setPickerMonth(0);
+                    setPickerYear(pickerYear + 1);
+                  } else {
+                    setPickerMonth(pickerMonth + 1);
+                  }
+                }}
+                style={{ padding: 8 }}
+              >
+                <Ionicons name="chevron-forward" size={24} color={colors.text} />
+              </Pressable>
+            </View>
+
+            {/* Day headers - Lunes a Domingo */}
+            <View style={{ flexDirection: 'row', marginBottom: 8 }}>
+              {['L', 'M', 'X', 'J', 'V', 'S', 'D'].map((day, index) => (
+                <View key={index} style={{ flex: 1, alignItems: 'center' }}>
+                  <Text style={{ 
+                    fontSize: 12, 
+                    fontWeight: '600', 
+                    color: colors.textMuted,
+                  }}>
+                    {day}
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            {/* Calendar days */}
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+              {getDaysInMonth(pickerYear, pickerMonth).map((day, index) => {
+                if (day === null) {
+                  return <View key={`empty-${index}`} style={{ width: '14.28%', aspectRatio: 1 }} />;
+                }
+
+                const dateStr = `${pickerYear}-${String(pickerMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isToday = dateStr === today;
+                const isSelected = dateStr === selectedDate;
+
+                return (
+                  <Pressable
+                    key={day}
+                    onPress={() => handleSelectDate(day)}
+                    style={{
+                      width: '14.28%',
+                      aspectRatio: 1,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <View style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: isSelected ? colors.primary : isToday ? colors.primary + '20' : 'transparent',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Text style={{
+                        fontSize: 14,
+                        fontWeight: isToday || isSelected ? '700' : '500',
+                        color: isSelected ? '#FFFFFF' : isToday ? colors.primary : colors.text,
+                      }}>
+                        {day}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            {/* Quick Actions */}
+            <View style={{ flexDirection: 'row', gap: 8, marginTop: 16 }}>
+              <Pressable
+                onPress={() => { setShowDatePicker(false); goToToday(); }}
+                style={{
+                  flex: 1,
+                  paddingVertical: 12,
+                  backgroundColor: colors.primary,
+                  borderRadius: 12,
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#FFFFFF' }}>
+                  Ir a Hoy
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setShowDatePicker(false)}
+                style={{
+                  flex: 1,
+                  paddingVertical: 12,
+                  backgroundColor: colors.cardElevated,
+                  borderRadius: 12,
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                  Cerrar
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* Meal Editor Modal */}
+      <Modal
+        visible={showMealEditor}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowMealEditor(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ 
+            backgroundColor: colors.card, 
+            borderTopLeftRadius: 24, 
+            borderTopRightRadius: 24,
+            maxHeight: '90%',
+          }}>
+            {editingMealType && (
+              <MealEditor 
+                colors={colors}
+                selectedDate={selectedDate}
+                mealType={editingMealType}
+                existingMeal={getMealForType(editingMealType)}
+                onClose={() => { setShowMealEditor(false); setEditingMealType(null); }}
+                onSuccess={handleMealEditorSuccess}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
+// ============================================================
+// MEAL EDITOR COMPONENT
+// ============================================================
+
+interface MealEditorProps {
+  colors: any;
+  selectedDate: string;
+  mealType: MealType;
+  existingMeal: MealWithItems | null;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+function MealEditor({ colors, selectedDate, mealType, existingMeal, onClose, onSuccess }: MealEditorProps) {
+  const [notes, setNotes] = useState(existingMeal?.notes || '');
+  const [selectedItems, setSelectedItems] = useState<Array<{
+    id?: number;
+    food_id?: number;
+    recipe_id?: number;
+    name: string;
+    fodmap_level?: string;
+  }>>(existingMeal?.items.map(item => ({
+    id: item.id,
+    food_id: item.food_id || undefined,
+    recipe_id: item.recipe_id || undefined,
+    name: item.name,
+    fodmap_level: item.fodmap_level,
+  })) || []);
+  
+  const [recipes, setRecipes] = useState<any[]>([]);
+  const [foods, setFoods] = useState<any[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    loadRecipesAndFoods();
+  }, []);
+
+  const loadRecipesAndFoods = async () => {
+    try {
+      const db = await getDatabase();
+      const recipesData = await db.getAllAsync('SELECT * FROM recipes ORDER BY name ASC');
+      const foodsData = await db.getAllAsync('SELECT * FROM foods ORDER BY name ASC');
+      setRecipes(recipesData);
+      setFoods(foodsData);
+    } catch (error) {
+      console.error('Error loading recipes/foods:', error);
+    }
+  };
+
+  const filteredRecipes = recipes.filter(r => 
+    r.name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const filteredFoods = foods.filter(f => 
+    f.name?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const handleAddRecipe = (recipe: any) => {
+    // Check if already added
+    if (selectedItems.some(item => item.recipe_id === recipe.id)) return;
+    
+    setSelectedItems([...selectedItems, {
+      recipe_id: recipe.id,
+      name: recipe.name,
+      fodmap_level: recipe.fodmap_level,
+    }]);
+    setSearchQuery('');
+    setShowSearch(false);
+  };
+
+  const handleAddFood = (food: any) => {
+    // Check if already added
+    if (selectedItems.some(item => item.food_id === food.id)) return;
+    
+    setSelectedItems([...selectedItems, {
+      food_id: food.id,
+      name: food.name,
+      fodmap_level: food.fodmap_level,
+    }]);
+    setSearchQuery('');
+  };
+
+  const handleRemoveItem = (index: number) => {
+    setSelectedItems(selectedItems.filter((_, i) => i !== index));
+  };
+
+  const getFodmapColor = (level: string | undefined) => {
+    switch (level) {
+      case 'low': return colors.fodmapLow;
+      case 'medium': return colors.fodmapMedium;
+      case 'high': return colors.fodmapHigh;
+      default: return colors.textMuted;
+    }
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const db = await getDatabase();
+      const now = new Date();
+      
+      let mealId: number;
+      
+      if (existingMeal) {
+        // Update existing meal
+        mealId = existingMeal.id;
+        await db.runAsync(
+          'UPDATE meals SET notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          [notes.trim() || null, mealId]
+        );
+        
+        // Delete all existing items
+        await db.runAsync('DELETE FROM meal_items WHERE meal_id = ?', [mealId]);
+      } else {
+        // Create new meal
+        const result = await db.runAsync(
+          'INSERT INTO meals (name, meal_type, date, time, notes) VALUES (?, ?, ?, ?, ?)',
+          [
+            MEAL_TYPE_LABELS[mealType],
+            mealType,
+            selectedDate,
+            now.toTimeString().slice(0, 5),
+            notes.trim() || null,
+          ]
+        );
+        mealId = result.lastInsertRowId;
+      }
+      
+      // Insert new items
+      for (const item of selectedItems) {
+        await insertRow('meal_items', {
+          meal_id: mealId,
+          food_id: item.food_id || null,
+          recipe_id: item.recipe_id || null,
+          name: item.name,
+          quantity: 1,
+          unit: 'porción',
+        });
+      }
+      
+      Alert.alert('¡Guardado!', `${MEAL_TYPE_LABELS[mealType]} actualizado`);
+      onSuccess();
+    } catch (error) {
+      console.error('Error saving meal:', error);
+      Alert.alert('Error', 'No se pudo guardar la comida');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      {/* Header */}
+      <View style={{ 
+        flexDirection: 'row', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+      }}>
+        <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
+          {MEAL_TYPE_LABELS[mealType]}
+        </Text>
+        <Pressable onPress={onClose}>
+          <Ionicons name="close" size={24} color={colors.text} />
+        </Pressable>
+      </View>
+
+      <ScrollView style={{ padding: 16 }} showsVerticalScrollIndicator={false}>
+        <View style={{ gap: 16, paddingBottom: 32 }}>
+          {/* Search */}
+          <View>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+              Añadir alimentos o recetas
+            </Text>
+            <View style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              backgroundColor: colors.cardElevated,
+              borderRadius: 12,
+              paddingHorizontal: 12,
+            }}>
+              <Ionicons name="search" size={18} color={colors.textMuted} />
+              <TextInput
+                value={searchQuery}
+                onChangeText={(text) => { setSearchQuery(text); setShowSearch(text.length > 0); }}
+                onFocus={() => searchQuery.length > 0 && setShowSearch(true)}
+                placeholder="Buscar..."
+                placeholderTextColor={colors.textMuted}
+                style={{ flex: 1, fontSize: 15, color: colors.text, padding: 12 }}
+              />
+              {searchQuery.length > 0 && (
+                <Pressable onPress={() => { setSearchQuery(''); setShowSearch(false); }}>
+                  <Ionicons name="close-circle" size={18} color={colors.textMuted} />
+                </Pressable>
+              )}
+            </View>
+
+            {/* Search Results */}
+            {showSearch && searchQuery.length > 0 && (
+              <View style={{ 
+                marginTop: 8, 
+                maxHeight: 200,
+                backgroundColor: colors.cardElevated,
+                borderRadius: 12,
+                overflow: 'hidden',
+              }}>
+                <ScrollView nestedScrollEnabled>
+                  {filteredRecipes.length > 0 && (
+                    <>
+                      <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textMuted, padding: 10, paddingBottom: 4 }}>
+                        RECETAS
+                      </Text>
+                      {filteredRecipes.slice(0, 5).map((recipe) => (
+                        <Pressable
+                          key={`recipe-${recipe.id}`}
+                          onPress={() => handleAddRecipe(recipe)}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            padding: 10,
+                            borderBottomWidth: 1,
+                            borderBottomColor: colors.border,
+                          }}
+                        >
+                          <Ionicons name="book" size={16} color={colors.primary} style={{ marginRight: 10 }} />
+                          <Text style={{ flex: 1, fontSize: 14, color: colors.text }}>{recipe.name}</Text>
+                          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: getFodmapColor(recipe.fodmap_level) }} />
+                        </Pressable>
+                      ))}
+                    </>
+                  )}
+
+                  {filteredFoods.length > 0 && (
+                    <>
+                      <Text style={{ fontSize: 11, fontWeight: '600', color: colors.textMuted, padding: 10, paddingBottom: 4 }}>
+                        ALIMENTOS
+                      </Text>
+                      {filteredFoods.slice(0, 5).map((food) => (
+                        <Pressable
+                          key={`food-${food.id}`}
+                          onPress={() => handleAddFood(food)}
+                          style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            padding: 10,
+                            borderBottomWidth: 1,
+                            borderBottomColor: colors.border,
+                          }}
+                        >
+                          <Ionicons name="nutrition" size={16} color={getFodmapColor(food.fodmap_level)} style={{ marginRight: 10 }} />
+                          <Text style={{ flex: 1, fontSize: 14, color: colors.text }}>{food.name}</Text>
+                          <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: getFodmapColor(food.fodmap_level) }} />
+                        </Pressable>
+                      ))}
+                    </>
+                  )}
+
+                  {filteredRecipes.length === 0 && filteredFoods.length === 0 && (
+                    <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center', padding: 16 }}>
+                      Sin resultados
+                    </Text>
+                  )}
+                </ScrollView>
+              </View>
+            )}
+          </View>
+
+          {/* Selected Items */}
+          <View>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+              {selectedItems.length > 0 ? `Seleccionados (${selectedItems.length})` : 'Sin alimentos añadidos'}
+            </Text>
+            
+            {selectedItems.length > 0 ? (
+              <View style={{ gap: 8 }}>
+                {selectedItems.map((item, index) => (
+                  <View 
+                    key={`${item.food_id || item.recipe_id || index}`}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      padding: 12,
+                      backgroundColor: getFodmapColor(item.fodmap_level) + '15',
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: getFodmapColor(item.fodmap_level) + '30',
+                    }}
+                  >
+                    <Ionicons 
+                      name={item.recipe_id ? 'book' : 'nutrition'} 
+                      size={16} 
+                      color={getFodmapColor(item.fodmap_level)} 
+                      style={{ marginRight: 10 }} 
+                    />
+                    <Text style={{ flex: 1, fontSize: 14, color: colors.text }}>
+                      {item.name}
+                    </Text>
+                    <Pressable onPress={() => handleRemoveItem(index)}>
+                      <Ionicons name="close-circle" size={22} color={colors.textMuted} />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            ) : (
+              <View style={{
+                padding: 24,
+                backgroundColor: colors.cardElevated,
+                borderRadius: 12,
+                alignItems: 'center',
+              }}>
+                <Ionicons name="restaurant-outline" size={32} color={colors.textMuted} />
+                <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 8 }}>
+                  Busca y añade alimentos o recetas
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Notes */}
+          <View>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+              Notas (opcional)
+            </Text>
+            <TextInput
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="Añade notas sobre esta comida..."
+              placeholderTextColor={colors.textMuted}
+              multiline
+              style={{
+                fontSize: 15,
+                color: colors.text,
+                padding: 14,
+                backgroundColor: colors.cardElevated,
+                borderRadius: 12,
+                minHeight: 80,
+                textAlignVertical: 'top',
+              }}
+            />
+          </View>
+
+          {/* Save Button */}
+          <Button onPress={handleSave} loading={loading} fullWidth size="lg">
+            Guardar {MEAL_TYPE_LABELS[mealType]}
+          </Button>
+        </View>
+      </ScrollView>
+    </>
+  );
+}
+
+// ============================================================
+// OTHER FORMS (Water, Activity, Symptom, Bowel, Treatment)
+// ============================================================
+
 // Water Form
-function WaterForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }) {
+function WaterForm({ colors, onSuccess, selectedDate }: { colors: any; onSuccess: () => void; selectedDate: string }) {
   const [glasses, setGlasses] = useState(1);
   const [loading, setLoading] = useState(false);
 
@@ -164,7 +1344,7 @@ function WaterForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }
       await insertRow('water_intake', {
         glasses,
         amount_ml: glasses * 250,
-        date: now.toISOString().split('T')[0],
+        date: selectedDate,
         time: now.toTimeString().split(' ')[0].slice(0, 5),
       });
       Alert.alert('¡Guardado!', `${glasses} vaso${glasses > 1 ? 's' : ''} de agua registrado${glasses > 1 ? 's' : ''}`);
@@ -230,427 +1410,13 @@ function WaterForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }
   );
 }
 
-// Meal Form
-function MealForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }) {
-  const [name, setName] = useState('');
-  const [mealType, setMealType] = useState<MealType>('other');
-  const [notes, setNotes] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [recipes, setRecipes] = useState<any[]>([]);
-  const [foods, setFoods] = useState<any[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedRecipe, setSelectedRecipe] = useState<any>(null);
-  const [selectedFoods, setSelectedFoods] = useState<any[]>([]);
-  const [showSearch, setShowSearch] = useState(false);
-
-  React.useEffect(() => {
-    loadRecipesAndFoods();
-  }, []);
-
-  const loadRecipesAndFoods = async () => {
-    try {
-      const db = await getDatabase();
-      const recipesData = await db.getAllAsync('SELECT * FROM recipes ORDER BY name ASC');
-      const foodsData = await db.getAllAsync('SELECT * FROM foods ORDER BY name ASC');
-      setRecipes(recipesData);
-      setFoods(foodsData);
-      console.log('[MealForm] Loaded:', recipesData.length, 'recipes,', foodsData.length, 'foods');
-    } catch (error) {
-      console.error('Error loading recipes/foods:', error);
-    }
-  };
-
-  const filteredRecipes = recipes.filter(r => 
-    r.name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const filteredFoods = foods.filter(f => 
-    f.name?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  const handleSelectRecipe = (recipe: any) => {
-    setSelectedRecipe(recipe);
-    setName(recipe.name);
-    setShowSearch(false);
-    setSearchQuery('');
-  };
-
-  const handleSelectFood = (food: any) => {
-    if (!selectedFoods.find(f => f.id === food.id)) {
-      setSelectedFoods([...selectedFoods, food]);
-    }
-    setSearchQuery('');
-  };
-
-  const handleRemoveFood = (foodId: number) => {
-    setSelectedFoods(selectedFoods.filter(f => f.id !== foodId));
-  };
-
-  const handleSave = async () => {
-    if (!name.trim() && !selectedRecipe && selectedFoods.length === 0) {
-      Alert.alert('Error', 'Por favor, introduce un nombre o selecciona una receta/alimento');
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const now = new Date();
-      const mealName = name.trim() || selectedRecipe?.name || selectedFoods.map(f => f.name).join(', ');
-      
-      const mealId = await insertRow('meals', {
-        name: mealName,
-        meal_type: mealType,
-        date: now.toISOString().split('T')[0],
-        time: now.toTimeString().split(' ')[0].slice(0, 5),
-        notes: notes.trim() || null,
-      });
-
-      // Add meal items if recipe or foods selected
-      if (selectedRecipe) {
-        await insertRow('meal_items', {
-          meal_id: mealId,
-          recipe_id: selectedRecipe.id,
-          food_id: null,
-          quantity: 1,
-          unit: 'porción',
-        });
-      }
-
-      for (const food of selectedFoods) {
-        await insertRow('meal_items', {
-          meal_id: mealId,
-          food_id: food.id,
-          recipe_id: null,
-          quantity: 1,
-          unit: food.serving_size || 'porción',
-        });
-      }
-
-      Alert.alert('¡Guardado!', 'Comida registrada correctamente');
-      onSuccess();
-    } catch (error) {
-      console.error('Error saving meal:', error);
-      Alert.alert('Error', 'No se pudo guardar el registro');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const getFodmapColor = (level: string) => {
-    switch (level) {
-      case 'low': return colors.fodmapLow;
-      case 'medium': return colors.fodmapMedium;
-      case 'high': return colors.fodmapHigh;
-      default: return colors.textMuted;
-    }
-  };
-
-  return (
-    <View style={{ gap: 16 }}>
-      {/* Recipe/Food Search */}
-      <Card>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>
-            Buscar receta o alimento
-          </Text>
-          {(selectedRecipe || selectedFoods.length > 0) && (
-            <Pressable onPress={() => {
-              setSelectedRecipe(null);
-              setSelectedFoods([]);
-              setName('');
-            }}>
-              <Text style={{ fontSize: 12, color: colors.error }}>Limpiar</Text>
-            </Pressable>
-          )}
-        </View>
-        
-        <View style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          backgroundColor: colors.cardElevated,
-          borderRadius: 10,
-          paddingHorizontal: 12,
-        }}>
-          <Ionicons name="search" size={18} color={colors.textMuted} />
-          <TextInput
-            value={searchQuery}
-            onChangeText={(text) => {
-              setSearchQuery(text);
-              setShowSearch(text.length > 0);
-            }}
-            onFocus={() => setShowSearch(true)}
-            placeholder="Buscar recetas o alimentos..."
-            placeholderTextColor={colors.textMuted}
-            style={{
-              flex: 1,
-              fontSize: 15,
-              color: colors.text,
-              padding: 12,
-            }}
-          />
-          {searchQuery.length > 0 && (
-            <Pressable onPress={() => { setSearchQuery(''); setShowSearch(false); }}>
-              <Ionicons name="close-circle" size={18} color={colors.textMuted} />
-            </Pressable>
-          )}
-        </View>
-
-        {/* Search Results */}
-        {showSearch && (searchQuery.length > 0 || recipes.length > 0 || foods.length > 0) && (
-          <View style={{ marginTop: 12, maxHeight: 200 }}>
-            {/* Recipes */}
-            {filteredRecipes.length > 0 && (
-              <>
-                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textMuted, marginBottom: 6 }}>
-                  RECETAS
-                </Text>
-                {filteredRecipes.slice(0, 5).map((recipe) => (
-                  <Pressable
-                    key={`recipe-${recipe.id}`}
-                    onPress={() => handleSelectRecipe(recipe)}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      padding: 10,
-                      backgroundColor: colors.cardElevated,
-                      borderRadius: 8,
-                      marginBottom: 6,
-                    }}
-                  >
-                    <Ionicons name="book" size={16} color={colors.primary} style={{ marginRight: 10 }} />
-                    <Text style={{ flex: 1, fontSize: 14, color: colors.text }}>{recipe.name}</Text>
-                    <View style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 4,
-                      backgroundColor: getFodmapColor(recipe.fodmap_level),
-                    }} />
-                  </Pressable>
-                ))}
-              </>
-            )}
-
-            {/* Foods (Alimentos) */}
-            {filteredFoods.length > 0 && (
-              <>
-                <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textMuted, marginBottom: 6, marginTop: 8 }}>
-                  ALIMENTOS
-                </Text>
-                {filteredFoods.slice(0, 5).map((food) => (
-                  <Pressable
-                    key={`food-${food.id}`}
-                    onPress={() => handleSelectFood(food)}
-                    style={{
-                      flexDirection: 'row',
-                      alignItems: 'center',
-                      padding: 10,
-                      backgroundColor: selectedFoods.find(f => f.id === food.id) 
-                        ? colors.primary + '20' 
-                        : colors.cardElevated,
-                      borderRadius: 8,
-                      marginBottom: 6,
-                    }}
-                  >
-                    <Ionicons name="nutrition" size={16} color={getFodmapColor(food.fodmap_level)} style={{ marginRight: 10 }} />
-                    <Text style={{ flex: 1, fontSize: 14, color: colors.text }}>{food.name}</Text>
-                    <View style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 4,
-                      backgroundColor: getFodmapColor(food.fodmap_level),
-                    }} />
-                  </Pressable>
-                ))}
-              </>
-            )}
-
-            {filteredRecipes.length === 0 && filteredFoods.length === 0 && searchQuery.length > 0 && (
-              <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center', padding: 16 }}>
-                No se encontraron resultados
-              </Text>
-            )}
-          </View>
-        )}
-
-        {/* Selected items */}
-        {(selectedRecipe || selectedFoods.length > 0) && (
-          <View style={{ marginTop: 12 }}>
-            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textMuted, marginBottom: 6 }}>
-              SELECCIONADOS
-            </Text>
-            {selectedRecipe && (
-              <View style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                padding: 10,
-                backgroundColor: colors.primary + '15',
-                borderRadius: 8,
-                marginBottom: 6,
-                borderWidth: 1,
-                borderColor: colors.primary + '30',
-              }}>
-                <Ionicons name="book" size={16} color={colors.primary} style={{ marginRight: 10 }} />
-                <Text style={{ flex: 1, fontSize: 14, color: colors.text, fontWeight: '500' }}>
-                  {selectedRecipe.name}
-                </Text>
-                <Pressable onPress={() => { setSelectedRecipe(null); setName(''); }}>
-                  <Ionicons name="close-circle" size={20} color={colors.textMuted} />
-                </Pressable>
-              </View>
-            )}
-            {selectedFoods.map((food) => (
-              <View
-                key={`selected-${food.id}`}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  padding: 10,
-                  backgroundColor: getFodmapColor(food.fodmap_level) + '15',
-                  borderRadius: 8,
-                  marginBottom: 6,
-                  borderWidth: 1,
-                  borderColor: getFodmapColor(food.fodmap_level) + '30',
-                }}
-              >
-                <Ionicons name="nutrition" size={16} color={getFodmapColor(food.fodmap_level)} style={{ marginRight: 10 }} />
-                <Text style={{ flex: 1, fontSize: 14, color: colors.text }}>{food.name}</Text>
-                <Pressable onPress={() => handleRemoveFood(food.id)}>
-                  <Ionicons name="close-circle" size={20} color={colors.textMuted} />
-                </Pressable>
-              </View>
-            ))}
-          </View>
-        )}
-      </Card>
-
-      {/* Custom Name (if not using recipe) */}
-      {!selectedRecipe && (
-        <Card>
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-            Nombre de la comida {selectedFoods.length > 0 ? '(opcional)' : ''}
-          </Text>
-          <TextInput
-            value={name}
-            onChangeText={setName}
-            placeholder={selectedFoods.length > 0 ? 'Se usarán los alimentos seleccionados' : 'Ej: Ensalada de pollo'}
-            placeholderTextColor={colors.textMuted}
-            style={{
-              fontSize: 16,
-              color: colors.text,
-              padding: 12,
-              backgroundColor: colors.cardElevated,
-              borderRadius: 10,
-            }}
-          />
-        </Card>
-      )}
-
-      <Card>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
-          Tipo de comida
-        </Text>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-          {(Object.keys(MEAL_TYPE_LABELS) as MealType[]).map((type) => (
-            <Pressable
-              key={type}
-              onPress={() => setMealType(type)}
-              style={{
-                paddingHorizontal: 14,
-                paddingVertical: 8,
-                borderRadius: 20,
-                backgroundColor: mealType === type ? colors.primary : colors.cardElevated,
-              }}
-            >
-              <Text style={{
-                fontSize: 13,
-                fontWeight: '600',
-                color: mealType === type ? '#FFFFFF' : colors.textSecondary,
-              }}>
-                {MEAL_TYPE_LABELS[type]}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      </Card>
-
-      <Card>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-          Notas (opcional)
-        </Text>
-        <TextInput
-          value={notes}
-          onChangeText={setNotes}
-          placeholder="Añade notas adicionales..."
-          placeholderTextColor={colors.textMuted}
-          multiline
-          numberOfLines={3}
-          style={{
-            fontSize: 15,
-            color: colors.text,
-            padding: 12,
-            backgroundColor: colors.cardElevated,
-            borderRadius: 10,
-            minHeight: 80,
-            textAlignVertical: 'top',
-          }}
-        />
-      </Card>
-
-      <Button onPress={handleSave} loading={loading} fullWidth size="lg">
-        Guardar comida
-      </Button>
-    </View>
-  );
-}
-
 // Symptom Form
-function SymptomForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }) {
+function SymptomForm({ colors, onSuccess, selectedDate }: { colors: any; onSuccess: () => void; selectedDate: string }) {
   const [symptomType, setSymptomType] = useState('');
   const [intensity, setIntensity] = useState(5);
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
-  
-  // Timestamp fields
-  const [useCurrentTime, setUseCurrentTime] = useState(true);
-  const [customDate, setCustomDate] = useState(new Date().toISOString().split('T')[0]);
   const [customTime, setCustomTime] = useState(new Date().toTimeString().slice(0, 5));
-  
-  // Cause/correlation fields
-  const [selectedTreatment, setSelectedTreatment] = useState<number | null>(null);
-  const [selectedMeal, setSelectedMeal] = useState<number | null>(null);
-  const [stressType, setStressType] = useState<'personal' | 'professional' | 'other' | null>(null);
-  const [stressNotes, setStressNotes] = useState('');
-  
-  // Data for dropdowns
-  const [treatments, setTreatments] = useState<{ id: number; name: string }[]>([]);
-  const [meals, setMeals] = useState<{ id: number; name: string; date: string; time: string }[]>([]);
-
-  React.useEffect(() => {
-    loadDropdownData();
-  }, []);
-
-  const loadDropdownData = async () => {
-    try {
-      const db = await getDatabase();
-      
-      // Load recent treatments
-      const treatmentsData = await db.getAllAsync<{ id: number; name: string }>(
-        'SELECT id, name FROM treatments WHERE is_active = 1 ORDER BY name'
-      );
-      setTreatments(treatmentsData || []);
-      
-      // Load recent meals (last 7 days)
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-      const mealsData = await db.getAllAsync<{ id: number; name: string; date: string; time: string }>(
-        `SELECT id, name, date, time FROM meals WHERE date >= ? ORDER BY date DESC, time DESC LIMIT 20`,
-        [sevenDaysAgo.toISOString().split('T')[0]]
-      );
-      setMeals(mealsData || []);
-    } catch (error) {
-      console.error('Error loading dropdown data:', error);
-    }
-  };
 
   const handleSave = async () => {
     if (!symptomType) {
@@ -660,20 +1426,12 @@ function SymptomForm({ colors, onSuccess }: { colors: any; onSuccess: () => void
 
     setLoading(true);
     try {
-      const now = new Date();
-      const logDate = useCurrentTime ? now.toISOString().split('T')[0] : customDate;
-      const logTime = useCurrentTime ? now.toTimeString().slice(0, 5) : customTime;
-      
       await insertRow('symptoms', {
         type: symptomType,
         intensity,
-        date: logDate,
-        time: logTime,
+        date: selectedDate,
+        time: customTime,
         notes: notes.trim() || null,
-        treatment_id: selectedTreatment || null,
-        meal_id: selectedMeal || null,
-        stress_type: stressType || null,
-        stress_notes: (stressType === 'other' && stressNotes.trim()) ? stressNotes.trim() : null,
       });
       Alert.alert('¡Guardado!', 'Síntoma registrado correctamente');
       onSuccess();
@@ -703,11 +1461,7 @@ function SymptomForm({ colors, onSuccess }: { colors: any; onSuccess: () => void
                 backgroundColor: symptomType === type ? colors.symptom : colors.cardElevated,
               }}
             >
-              <Text style={{
-                fontSize: 13,
-                fontWeight: '600',
-                color: symptomType === type ? '#FFFFFF' : colors.textSecondary,
-              }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: symptomType === type ? '#FFFFFF' : colors.textSecondary }}>
                 {type}
               </Text>
             </Pressable>
@@ -730,19 +1484,13 @@ function SymptomForm({ colors, onSuccess }: { colors: any; onSuccess: () => void
                 maxWidth: 32,
                 borderRadius: 8,
                 backgroundColor: intensity >= level 
-                  ? level <= 3 ? colors.fodmapLow 
-                    : level <= 6 ? colors.fodmapMedium 
-                    : colors.fodmapHigh
+                  ? level <= 3 ? colors.fodmapLow : level <= 6 ? colors.fodmapMedium : colors.fodmapHigh
                   : colors.cardElevated,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
-              <Text style={{
-                fontSize: 11,
-                fontWeight: '600',
-                color: intensity >= level ? '#FFFFFF' : colors.textMuted,
-              }}>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: intensity >= level ? '#FFFFFF' : colors.textMuted }}>
                 {level}
               </Text>
             </Pressable>
@@ -750,313 +1498,21 @@ function SymptomForm({ colors, onSuccess }: { colors: any; onSuccess: () => void
         </View>
       </Card>
 
-      {/* Timestamp */}
-      <Card>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
-          ¿Cuándo apareció el síntoma?
-        </Text>
-        
-        <View style={{ flexDirection: 'row', gap: 8, marginBottom: useCurrentTime ? 0 : 14 }}>
-          <Pressable
-            onPress={() => setUseCurrentTime(true)}
-            style={{
-              flex: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              padding: 14,
-              borderRadius: 12,
-              backgroundColor: useCurrentTime ? colors.symptom : colors.cardElevated,
-            }}
-          >
-            <Ionicons 
-              name="time" 
-              size={18} 
-              color={useCurrentTime ? '#FFFFFF' : colors.textSecondary} 
-            />
-            <Text style={{
-              fontSize: 14,
-              fontWeight: '600',
-              color: useCurrentTime ? '#FFFFFF' : colors.textSecondary,
-            }}>
-              Ahora mismo
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setUseCurrentTime(false)}
-            style={{
-              flex: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              padding: 14,
-              borderRadius: 12,
-              backgroundColor: !useCurrentTime ? colors.symptom : colors.cardElevated,
-            }}
-          >
-            <Ionicons 
-              name="calendar" 
-              size={18} 
-              color={!useCurrentTime ? '#FFFFFF' : colors.textSecondary} 
-            />
-            <Text style={{
-              fontSize: 14,
-              fontWeight: '600',
-              color: !useCurrentTime ? '#FFFFFF' : colors.textSecondary,
-            }}>
-              Otra hora
-            </Text>
-          </Pressable>
-        </View>
-
-        {!useCurrentTime && (
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>
-                Fecha
-              </Text>
-              <TextInput
-                value={customDate}
-                onChangeText={setCustomDate}
-                placeholder="YYYY-MM-DD"
-                placeholderTextColor={colors.textMuted}
-                style={{
-                  fontSize: 15,
-                  color: colors.text,
-                  padding: 12,
-                  backgroundColor: colors.cardElevated,
-                  borderRadius: 10,
-                  textAlign: 'center',
-                }}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>
-                Hora
-              </Text>
-              <TextInput
-                value={customTime}
-                onChangeText={setCustomTime}
-                placeholder="HH:MM"
-                placeholderTextColor={colors.textMuted}
-                style={{
-                  fontSize: 15,
-                  color: colors.text,
-                  padding: 12,
-                  backgroundColor: colors.cardElevated,
-                  borderRadius: 10,
-                  textAlign: 'center',
-                }}
-              />
-            </View>
-          </View>
-        )}
-      </Card>
-
-      {/* Possible Causes / Correlation */}
-      <Card>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
-          Posible causa o correlación (opcional)
-        </Text>
-        
-        {/* Treatment */}
-        <View style={{ marginBottom: 12 }}>
-          <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 6 }}>
-            ¿Relacionado con un medicamento?
-          </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-            <Pressable
-              onPress={() => setSelectedTreatment(null)}
-              style={{
-                paddingHorizontal: 14,
-                paddingVertical: 10,
-                borderRadius: 12,
-                backgroundColor: selectedTreatment === null ? colors.cardElevated : colors.card,
-                borderWidth: 1,
-                borderColor: selectedTreatment === null ? colors.border : 'transparent',
-              }}
-            >
-              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary }}>
-                Ninguno
-              </Text>
-            </Pressable>
-            {treatments.map((treatment) => (
-              <Pressable
-                key={treatment.id}
-                onPress={() => setSelectedTreatment(treatment.id)}
-                style={{
-                  paddingHorizontal: 14,
-                  paddingVertical: 10,
-                  borderRadius: 12,
-                  backgroundColor: selectedTreatment === treatment.id ? colors.treatment : colors.cardElevated,
-                }}
-              >
-                <Text style={{
-                  fontSize: 13,
-                  fontWeight: '600',
-                  color: selectedTreatment === treatment.id ? '#FFFFFF' : colors.textSecondary,
-                }}>
-                  {treatment.name}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Meal */}
-        <View style={{ marginBottom: 12 }}>
-          <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 6 }}>
-            ¿Relacionado con una comida?
-          </Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-            <Pressable
-              onPress={() => setSelectedMeal(null)}
-              style={{
-                paddingHorizontal: 14,
-                paddingVertical: 10,
-                borderRadius: 12,
-                backgroundColor: selectedMeal === null ? colors.cardElevated : colors.card,
-                borderWidth: 1,
-                borderColor: selectedMeal === null ? colors.border : 'transparent',
-              }}
-            >
-              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary }}>
-                Ninguna
-              </Text>
-            </Pressable>
-            {meals.slice(0, 10).map((meal) => (
-              <Pressable
-                key={meal.id}
-                onPress={() => setSelectedMeal(meal.id)}
-                style={{
-                  paddingHorizontal: 14,
-                  paddingVertical: 10,
-                  borderRadius: 12,
-                  backgroundColor: selectedMeal === meal.id ? colors.primary : colors.cardElevated,
-                }}
-              >
-                <Text style={{
-                  fontSize: 13,
-                  fontWeight: '600',
-                  color: selectedMeal === meal.id ? '#FFFFFF' : colors.textSecondary,
-                }}>
-                  {meal.name || 'Comida'} {meal.date}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-        </View>
-
-        {/* Stress */}
-        <View>
-          <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 6 }}>
-            ¿Relacionado con estrés?
-          </Text>
-          <View style={{ flexDirection: 'row', gap: 8, marginBottom: stressType === 'other' ? 10 : 0 }}>
-            <Pressable
-              onPress={() => setStressType(stressType === 'personal' ? null : 'personal')}
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                padding: 12,
-                borderRadius: 12,
-                backgroundColor: stressType === 'personal' ? '#E91E63' : colors.cardElevated,
-              }}
-            >
-              <Ionicons 
-                name={stressType === 'personal' ? 'heart' : 'heart-outline'} 
-                size={16} 
-                color={stressType === 'personal' ? '#FFFFFF' : colors.textSecondary} 
-              />
-              <Text style={{
-                fontSize: 13,
-                fontWeight: '600',
-                color: stressType === 'personal' ? '#FFFFFF' : colors.textSecondary,
-              }}>
-                Personal
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setStressType(stressType === 'professional' ? null : 'professional')}
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                padding: 12,
-                borderRadius: 12,
-                backgroundColor: stressType === 'professional' ? '#FF9800' : colors.cardElevated,
-              }}
-            >
-              <Ionicons 
-                name={stressType === 'professional' ? 'briefcase' : 'briefcase-outline'} 
-                size={16} 
-                color={stressType === 'professional' ? '#FFFFFF' : colors.textSecondary} 
-              />
-              <Text style={{
-                fontSize: 13,
-                fontWeight: '600',
-                color: stressType === 'professional' ? '#FFFFFF' : colors.textSecondary,
-              }}>
-                Profesional
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setStressType(stressType === 'other' ? null : 'other')}
-              style={{
-                flex: 1,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 6,
-                padding: 12,
-                borderRadius: 12,
-                backgroundColor: stressType === 'other' ? '#9C27B0' : colors.cardElevated,
-              }}
-            >
-              <Ionicons 
-                name={stressType === 'other' ? 'ellipse' : 'ellipse-outline'} 
-                size={16} 
-                color={stressType === 'other' ? '#FFFFFF' : colors.textSecondary} 
-              />
-              <Text style={{
-                fontSize: 13,
-                fontWeight: '600',
-                color: stressType === 'other' ? '#FFFFFF' : colors.textSecondary,
-              }}>
-                Otro
-              </Text>
-            </Pressable>
-          </View>
-          {stressType === 'other' && (
-            <TextInput
-              value={stressNotes}
-              onChangeText={setStressNotes}
-              placeholder="Especifica el motivo..."
-              placeholderTextColor={colors.textMuted}
-              style={{
-                fontSize: 14,
-                color: colors.text,
-                padding: 12,
-                backgroundColor: colors.cardElevated,
-                borderRadius: 10,
-                marginTop: 8,
-              }}
-            />
-          )}
-        </View>
-      </Card>
-
       <Card>
         <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-          Notas (opcional)
+          Hora
         </Text>
+        <TextInput
+          value={customTime}
+          onChangeText={setCustomTime}
+          placeholder="HH:MM"
+          placeholderTextColor={colors.textMuted}
+          style={{ fontSize: 18, fontWeight: '600', color: colors.text, padding: 12, backgroundColor: colors.cardElevated, borderRadius: 10, textAlign: 'center' }}
+        />
+      </Card>
+
+      <Card>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>Notas (opcional)</Text>
         <TextInput
           value={notes}
           onChangeText={setNotes}
@@ -1064,15 +1520,7 @@ function SymptomForm({ colors, onSuccess }: { colors: any; onSuccess: () => void
           placeholderTextColor={colors.textMuted}
           multiline
           numberOfLines={3}
-          style={{
-            fontSize: 15,
-            color: colors.text,
-            padding: 12,
-            backgroundColor: colors.cardElevated,
-            borderRadius: 10,
-            minHeight: 80,
-            textAlignVertical: 'top',
-          }}
+          style={{ fontSize: 15, color: colors.text, padding: 12, backgroundColor: colors.cardElevated, borderRadius: 10, minHeight: 80, textAlignVertical: 'top' }}
         />
       </Card>
 
@@ -1083,8 +1531,8 @@ function SymptomForm({ colors, onSuccess }: { colors: any; onSuccess: () => void
   );
 }
 
-// Bowel Movement Form
-function BowelForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }) {
+// Bowel Form
+function BowelForm({ colors, onSuccess, selectedDate }: { colors: any; onSuccess: () => void; selectedDate: string }) {
   const [bristolType, setBristolType] = useState<BristolType>(4);
   const [urgency, setUrgency] = useState(3);
   const [pain, setPain] = useState(0);
@@ -1100,7 +1548,7 @@ function BowelForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }
         urgency,
         pain,
         discomfort: 0,
-        date: now.toISOString().split('T')[0],
+        date: selectedDate,
         time: now.toTimeString().split(' ')[0].slice(0, 5),
         notes: notes.trim() || null,
       });
@@ -1135,20 +1583,12 @@ function BowelForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }
                 borderColor: bristolType === type ? colors.bowel : 'transparent',
               }}
             >
-              <Text style={{ fontSize: 24, marginRight: 12 }}>
-                {BRISTOL_SCALE[type].emoji}
-              </Text>
+              <Text style={{ fontSize: 24, marginRight: 12 }}>{BRISTOL_SCALE[type].emoji}</Text>
               <View style={{ flex: 1 }}>
-                <Text style={{ 
-                  fontSize: 14, 
-                  fontWeight: '600', 
-                  color: bristolType === type ? colors.bowel : colors.text,
-                }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: bristolType === type ? colors.bowel : colors.text }}>
                   {BRISTOL_SCALE[type].name}
                 </Text>
-                <Text style={{ fontSize: 12, color: colors.textSecondary }}>
-                  {BRISTOL_SCALE[type].description}
-                </Text>
+                <Text style={{ fontSize: 12, color: colors.textSecondary }}>{BRISTOL_SCALE[type].description}</Text>
               </View>
             </Pressable>
           ))}
@@ -1156,72 +1596,41 @@ function BowelForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }
       </Card>
 
       <Card>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
-          Urgencia: {urgency}/5
-        </Text>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>Urgencia: {urgency}/5</Text>
         <View style={{ flexDirection: 'row', gap: 8 }}>
           {[1, 2, 3, 4, 5].map((level) => (
             <Pressable
               key={level}
               onPress={() => setUrgency(level)}
-              style={{
-                flex: 1,
-                paddingVertical: 12,
-                borderRadius: 8,
-                backgroundColor: urgency >= level ? colors.warning : colors.cardElevated,
-                alignItems: 'center',
-              }}
+              style={{ flex: 1, paddingVertical: 12, borderRadius: 8, backgroundColor: urgency >= level ? colors.warning : colors.cardElevated, alignItems: 'center' }}
             >
-              <Text style={{
-                fontSize: 14,
-                fontWeight: '600',
-                color: urgency >= level ? '#FFFFFF' : colors.textMuted,
-              }}>
-                {level}
-              </Text>
+              <Text style={{ fontSize: 14, fontWeight: '600', color: urgency >= level ? '#FFFFFF' : colors.textMuted }}>{level}</Text>
             </Pressable>
           ))}
         </View>
       </Card>
 
       <Card>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
-          Dolor: {pain}/10
-        </Text>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>Dolor: {pain}/10</Text>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
           {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
             <Pressable
               key={level}
               onPress={() => setPain(level)}
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 14,
-                backgroundColor: pain >= level && level > 0
-                  ? level <= 3 ? colors.fodmapLow 
-                    : level <= 6 ? colors.fodmapMedium 
-                    : colors.fodmapHigh
-                  : colors.cardElevated,
-                alignItems: 'center',
-                justifyContent: 'center',
+                width: 28, height: 28, borderRadius: 14,
+                backgroundColor: pain >= level && level > 0 ? level <= 3 ? colors.fodmapLow : level <= 6 ? colors.fodmapMedium : colors.fodmapHigh : colors.cardElevated,
+                alignItems: 'center', justifyContent: 'center',
               }}
             >
-              <Text style={{
-                fontSize: 11,
-                fontWeight: '600',
-                color: pain >= level && level > 0 ? '#FFFFFF' : colors.textMuted,
-              }}>
-                {level}
-              </Text>
+              <Text style={{ fontSize: 11, fontWeight: '600', color: pain >= level && level > 0 ? '#FFFFFF' : colors.textMuted }}>{level}</Text>
             </Pressable>
           ))}
         </View>
       </Card>
 
       <Card>
-        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-          Notas (opcional)
-        </Text>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>Notas (opcional)</Text>
         <TextInput
           value={notes}
           onChangeText={setNotes}
@@ -1229,15 +1638,7 @@ function BowelForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }
           placeholderTextColor={colors.textMuted}
           multiline
           numberOfLines={3}
-          style={{
-            fontSize: 15,
-            color: colors.text,
-            padding: 12,
-            backgroundColor: colors.cardElevated,
-            borderRadius: 10,
-            minHeight: 80,
-            textAlignVertical: 'top',
-          }}
+          style={{ fontSize: 15, color: colors.text, padding: 12, backgroundColor: colors.cardElevated, borderRadius: 10, minHeight: 80, textAlignVertical: 'top' }}
         />
       </Card>
 
@@ -1248,42 +1649,26 @@ function BowelForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }
   );
 }
 
-// Treatment Form - Two blocks: My treatments + Quick entry
-function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }) {
-  const router = useRouter();
-  const today = new Date().toISOString().split('T')[0];
-  
-  // Data
+// Treatment Form (Simplified)
+function TreatmentForm({ colors, onSuccess, selectedDate, router }: { colors: any; onSuccess: () => void; selectedDate: string; router: any }) {
   const [treatments, setTreatments] = useState<Treatment[]>([]);
-  const [todayLogs, setTodayLogs] = useState<TreatmentLog[]>([]);
   const [loadingTreatments, setLoadingTreatments] = useState(true);
-  
-  // Quick entry modal
-  const [showQuickModal, setShowQuickModal] = useState(false);
   const [quickName, setQuickName] = useState('');
   const [dosageAmount, setDosageAmount] = useState('');
   const [dosageUnit, setDosageUnit] = useState('mg');
-  const [useCurrentTime, setUseCurrentTime] = useState(true);
-  const [customDate, setCustomDate] = useState(today);
-  const [customTime, setCustomTime] = useState(new Date().toTimeString().slice(0, 5));
-  const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const DOSAGE_UNITS = ['mg', 'g', 'ml', 'gotas', 'comprimido', 'cápsula', 'cucharada', 'sobre'];
+  const DOSAGE_UNITS = ['mg', 'g', 'ml', 'gotas', 'comprimido', 'cápsula'];
 
   React.useEffect(() => {
-    loadData();
+    loadTreatments();
   }, []);
 
-  const loadData = async () => {
+  const loadTreatments = async () => {
     try {
       const db = await getDatabase();
-      const [treatmentsData, logsData] = await Promise.all([
-        db.getAllAsync<Treatment>('SELECT * FROM treatments WHERE is_active = 1 ORDER BY name'),
-        db.getAllAsync<TreatmentLog>(`SELECT * FROM treatment_logs WHERE date = ? ORDER BY time DESC`, [today])
-      ]);
-      setTreatments(treatmentsData);
-      setTodayLogs(logsData);
+      const data = await db.getAllAsync('SELECT * FROM treatments WHERE is_active = 1 ORDER BY name');
+      setTreatments(data as Treatment[]);
     } catch (error) {
       console.error('Error loading treatments:', error);
     } finally {
@@ -1298,7 +1683,7 @@ function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => vo
       await insertRow('treatment_logs', {
         treatment_id: treatment.id,
         treatment_name: treatment.name,
-        date: now.toISOString().split('T')[0],
+        date: selectedDate,
         time: now.toTimeString().slice(0, 5),
         taken: 1,
         skipped: 0,
@@ -1306,7 +1691,6 @@ function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => vo
         unit: treatment.dosage_unit,
       });
       Alert.alert('¡Guardado!', `Toma de ${treatment.name} registrada`);
-      loadData();
       onSuccess();
     } catch (error) {
       Alert.alert('Error', 'No se pudo registrar la toma');
@@ -1325,16 +1709,10 @@ function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => vo
     try {
       const db = await getDatabase();
       const now = new Date();
-      const logDate = useCurrentTime ? now.toISOString().split('T')[0] : customDate;
-      const logTime = useCurrentTime ? now.toTimeString().slice(0, 5) : customTime;
       
-      // Quick entry - create or find treatment
-      const existing = await (db as any).getFirstAsync(
-        'SELECT id FROM treatments WHERE name = ?',
-        [quickName.trim()]
-      );
-      
+      const existing = await db.getFirstAsync('SELECT id FROM treatments WHERE name = ?', [quickName.trim()]) as { id: number } | null;
       let treatmentId: number;
+      
       if (existing) {
         treatmentId = existing.id;
       } else {
@@ -1348,19 +1726,15 @@ function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => vo
       await insertRow('treatment_logs', {
         treatment_id: treatmentId,
         treatment_name: quickName.trim(),
-        date: logDate,
-        time: logTime,
+        date: selectedDate,
+        time: now.toTimeString().slice(0, 5),
         taken: 1,
         skipped: 0,
         amount_taken: parseFloat(dosageAmount) || null,
         unit: dosageAmount.trim() ? dosageUnit : null,
-        notes: notes.trim() || null,
       });
 
       Alert.alert('¡Guardado!', `Toma de ${quickName.trim()} registrada`);
-      setShowQuickModal(false);
-      resetQuickForm();
-      loadData();
       onSuccess();
     } catch (error) {
       Alert.alert('Error', 'No se pudo guardar el registro');
@@ -1369,499 +1743,97 @@ function TreatmentForm({ colors, onSuccess }: { colors: any; onSuccess: () => vo
     }
   };
 
-  const resetQuickForm = () => {
-    setQuickName('');
-    setDosageAmount('');
-    setDosageUnit('mg');
-    setUseCurrentTime(true);
-    setNotes('');
-  };
-
-  const getTodayLogsForTreatment = (treatmentId: number) => {
-    return todayLogs.filter(log => log.treatment_id === treatmentId);
-  };
-
   return (
     <View style={{ gap: 20 }}>
-      {/* BLOCK 1: My Treatments */}
-      <View style={{
-        backgroundColor: colors.card,
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
-      }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <View style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              backgroundColor: colors.treatment + '20',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <Ionicons name="medical" size={20} color={colors.treatment} />
-            </View>
-            <View>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>
-                Mis Tratamientos
-              </Text>
-              <Text style={{ fontSize: 12, color: colors.textMuted }}>
-                Registra tomas de tus tratamientos activos
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Today's quick log for each treatment */}
+      <Card>
+        <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 12 }}>
+          Mis Tratamientos
+        </Text>
+        
         {loadingTreatments ? (
-          <View style={{ padding: 20, alignItems: 'center' }}>
-            <ActivityIndicator color={colors.treatment} />
-          </View>
+          <ActivityIndicator color={colors.treatment} />
         ) : treatments.length === 0 ? (
-          <View style={{ 
-            padding: 24, 
-            alignItems: 'center', 
-            backgroundColor: colors.cardElevated,
-            borderRadius: 12,
-          }}>
-            <Ionicons name="medical-outline" size={32} color={colors.textMuted} />
-            <Text style={{ fontSize: 14, color: colors.textMuted, marginTop: 8, textAlign: 'center' }}>
-              No tienes tratamientos activos
-            </Text>
-          </View>
+          <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center', paddingVertical: 16 }}>
+            No tienes tratamientos activos
+          </Text>
         ) : (
           <View style={{ gap: 8 }}>
-            {treatments.slice(0, 5).map((treatment) => {
-              const logsToday = getTodayLogsForTreatment(treatment.id);
-              return (
-                <View 
-                  key={treatment.id} 
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    padding: 12,
-                    backgroundColor: colors.cardElevated,
-                    borderRadius: 12,
-                    gap: 12,
-                  }}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
-                      {treatment.name}
-                    </Text>
-                    {treatment.dosage_amount && (
-                      <Text style={{ fontSize: 12, color: colors.textMuted }}>
-                        {treatment.dosage_amount} {treatment.dosage_unit}
-                      </Text>
-                    )}
-                    {logsToday.length > 0 && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
-                        <Ionicons name="checkmark-circle" size={12} color={colors.fodmapLow} />
-                        <Text style={{ fontSize: 11, color: colors.fodmapLow }}>
-                          {logsToday.length} toma{logsToday.length !== 1 ? 's' : ''} hoy
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                  <Pressable
-                    onPress={() => handleQuickLogTreatment(treatment)}
-                    style={{
-                      paddingHorizontal: 16,
-                      paddingVertical: 10,
-                      backgroundColor: colors.treatment,
-                      borderRadius: 10,
-                    }}
-                  >
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: '#FFFFFF' }}>
-                      + Toma
-                    </Text>
-                  </Pressable>
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        {/* Create new treatment button */}
-        <Pressable
-          onPress={() => router.push('/treatment/new')}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 14,
-            marginTop: 12,
-            backgroundColor: colors.treatment + '15',
-            borderRadius: 12,
-            borderWidth: 1,
-            borderColor: colors.treatment + '30',
-            borderStyle: 'dashed',
-            gap: 8,
-          }}
-        >
-          <Ionicons name="add-circle-outline" size={20} color={colors.treatment} />
-          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.treatment }}>
-            Crear nuevo tratamiento
-          </Text>
-        </Pressable>
-
-        {/* Link to manage all treatments */}
-        <Pressable
-          onPress={() => router.push('/treatment')}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            paddingVertical: 10,
-            marginTop: 8,
-            gap: 6,
-          }}
-        >
-          <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-            Ver todos mis tratamientos
-          </Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
-        </Pressable>
-      </View>
-
-      {/* BLOCK 2: Quick Entry */}
-      <View style={{
-        backgroundColor: colors.card,
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
-      }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <View style={{
-            width: 36,
-            height: 36,
-            borderRadius: 10,
-            backgroundColor: '#8B5CF6' + '20',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-            <Ionicons name="flash" size={20} color="#8B5CF6" />
-          </View>
-          <View>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>
-              Toma Puntual
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.textMuted }}>
-              Registra una toma rápida sin crear tratamiento
-            </Text>
-          </View>
-        </View>
-
-        {/* Today's quick logs */}
-        {todayLogs.filter(log => !log.treatment_id || !treatments.find(t => t.id === log.treatment_id)).length > 0 && (
-          <View style={{ marginBottom: 12 }}>
-            <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 8 }}>
-              Tomas puntuales de hoy:
-            </Text>
-            <View style={{ gap: 6 }}>
-              {todayLogs.filter(log => !log.treatment_id || !treatments.find(t => t.id === log.treatment_id)).slice(0, 3).map((log) => (
-                <View 
-                  key={log.id}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    padding: 10,
-                    backgroundColor: colors.cardElevated,
-                    borderRadius: 8,
-                    gap: 8,
-                  }}
-                >
-                  <Ionicons name="checkmark-circle" size={14} color={colors.fodmapLow} />
-                  <Text style={{ fontSize: 13, color: colors.text, flex: 1 }}>
-                    {log.treatment_name}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: colors.textMuted }}>
-                    {log.time}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Quick entry button */}
-        <Pressable
-          onPress={() => setShowQuickModal(true)}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 16,
-            backgroundColor: '#8B5CF6',
-            borderRadius: 12,
-            gap: 10,
-          }}
-        >
-          <Ionicons name="add-circle" size={22} color="#FFFFFF" />
-          <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>
-            Registrar toma puntual
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* Quick Entry Modal */}
-      <Modal
-        visible={showQuickModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowQuickModal(false)}
-      >
-        <View style={{ 
-          flex: 1, 
-          backgroundColor: 'rgba(0,0,0,0.5)', 
-          justifyContent: 'flex-end' 
-        }}>
-          <View style={{ 
-            backgroundColor: colors.card, 
-            borderTopLeftRadius: 24, 
-            borderTopRightRadius: 24,
-            maxHeight: '90%',
-          }}>
-            {/* Modal Header */}
-            <View style={{ 
-              flexDirection: 'row', 
-              justifyContent: 'space-between', 
-              alignItems: 'center',
-              padding: 16,
-              borderBottomWidth: 1,
-              borderBottomColor: colors.border,
-            }}>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
-                Toma Puntual
-              </Text>
-              <Pressable onPress={() => setShowQuickModal(false)}>
-                <Ionicons name="close" size={24} color={colors.text} />
-              </Pressable>
-            </View>
-
-            <ScrollView style={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-              <View style={{ gap: 16, paddingBottom: 32 }}>
-                {/* Treatment name */}
-                <View>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-                    Medicamento / Suplemento
-                  </Text>
-                  <TextInput
-                    value={quickName}
-                    onChangeText={setQuickName}
-                    placeholder="Ej: Ibuprofeno, Vitamina D..."
-                    placeholderTextColor={colors.textMuted}
-                    style={{
-                      fontSize: 16,
-                      color: colors.text,
-                      padding: 14,
-                      backgroundColor: colors.cardElevated,
-                      borderRadius: 12,
-                    }}
-                  />
-                </View>
-
-                {/* Dosage */}
-                <View>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-                    Dosis (opcional)
-                  </Text>
-                  <View style={{ flexDirection: 'row', gap: 10 }}>
-                    <TextInput
-                      value={dosageAmount}
-                      onChangeText={setDosageAmount}
-                      placeholder="0"
-                      placeholderTextColor={colors.textMuted}
-                      keyboardType="numeric"
-                      style={{
-                        width: 80,
-                        fontSize: 20,
-                        fontWeight: '700',
-                        color: colors.text,
-                        padding: 14,
-                        backgroundColor: colors.cardElevated,
-                        borderRadius: 12,
-                        textAlign: 'center',
-                      }}
-                    />
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-                      {DOSAGE_UNITS.map(unit => (
-                        <Pressable
-                          key={unit}
-                          onPress={() => setDosageUnit(unit)}
-                          style={{
-                            paddingHorizontal: 14,
-                            paddingVertical: 14,
-                            borderRadius: 12,
-                            backgroundColor: dosageUnit === unit ? '#8B5CF6' : colors.cardElevated,
-                          }}
-                        >
-                          <Text style={{
-                            fontSize: 14,
-                            fontWeight: '600',
-                            color: dosageUnit === unit ? '#FFFFFF' : colors.textSecondary,
-                          }}>
-                            {unit}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </ScrollView>
-                  </View>
-                </View>
-
-                {/* Timestamp */}
-                <View>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-                    ¿Cuándo?
-                  </Text>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <Pressable
-                      onPress={() => setUseCurrentTime(true)}
-                      style={{
-                        flex: 1,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 6,
-                        padding: 12,
-                        borderRadius: 10,
-                        backgroundColor: useCurrentTime ? '#8B5CF6' : colors.cardElevated,
-                      }}
-                    >
-                      <Ionicons name="time" size={16} color={useCurrentTime ? '#FFFFFF' : colors.textSecondary} />
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: useCurrentTime ? '#FFFFFF' : colors.textSecondary }}>
-                        Ahora
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => setUseCurrentTime(false)}
-                      style={{
-                        flex: 1,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 6,
-                        padding: 12,
-                        borderRadius: 10,
-                        backgroundColor: !useCurrentTime ? '#8B5CF6' : colors.cardElevated,
-                      }}
-                    >
-                      <Ionicons name="calendar" size={16} color={!useCurrentTime ? '#FFFFFF' : colors.textSecondary} />
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: !useCurrentTime ? '#FFFFFF' : colors.textSecondary }}>
-                        Otra hora
-                      </Text>
-                    </Pressable>
-                  </View>
-                  {!useCurrentTime && (
-                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                      <TextInput
-                        value={customDate}
-                        onChangeText={setCustomDate}
-                        placeholder="YYYY-MM-DD"
-                        placeholderTextColor={colors.textMuted}
-                        style={{
-                          flex: 1,
-                          fontSize: 14,
-                          color: colors.text,
-                          padding: 12,
-                          backgroundColor: colors.cardElevated,
-                          borderRadius: 10,
-                          textAlign: 'center',
-                        }}
-                      />
-                      <TextInput
-                        value={customTime}
-                        onChangeText={setCustomTime}
-                        placeholder="HH:MM"
-                        placeholderTextColor={colors.textMuted}
-                        style={{
-                          flex: 1,
-                          fontSize: 14,
-                          color: colors.text,
-                          padding: 12,
-                          backgroundColor: colors.cardElevated,
-                          borderRadius: 10,
-                          textAlign: 'center',
-                        }}
-                      />
-                    </View>
+            {treatments.map((treatment) => (
+              <View key={treatment.id} style={{ flexDirection: 'row', alignItems: 'center', padding: 12, backgroundColor: colors.cardElevated, borderRadius: 12, gap: 12 }}>
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>{treatment.name}</Text>
+                  {treatment.dosage_amount && (
+                    <Text style={{ fontSize: 12, color: colors.textMuted }}>{treatment.dosage_amount} {treatment.dosage_unit}</Text>
                   )}
                 </View>
-
-                {/* Notes */}
-                <View>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-                    Notas (opcional)
-                  </Text>
-                  <TextInput
-                    value={notes}
-                    onChangeText={setNotes}
-                    placeholder="Observaciones..."
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={{
-                      fontSize: 15,
-                      color: colors.text,
-                      padding: 12,
-                      backgroundColor: colors.cardElevated,
-                      borderRadius: 10,
-                      minHeight: 60,
-                      textAlignVertical: 'top',
-                    }}
-                  />
-                </View>
-
-                {/* Save button */}
-                <Button 
-                  onPress={handleSaveQuickEntry} 
-                  loading={loading} 
-                  fullWidth 
-                  size="lg"
-                  disabled={!quickName.trim()}
+                <Pressable
+                  onPress={() => handleQuickLogTreatment(treatment)}
+                  disabled={loading}
+                  style={{ paddingHorizontal: 16, paddingVertical: 10, backgroundColor: colors.treatment, borderRadius: 10 }}
                 >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
-                      Registrar toma
-                    </Text>
-                  </View>
-                </Button>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: '#FFFFFF' }}>+ Toma</Text>
+                </Pressable>
               </View>
+            ))}
+          </View>
+        )}
+      </Card>
+
+      <Card>
+        <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text, marginBottom: 12 }}>
+          Toma Puntual
+        </Text>
+        
+        <View style={{ gap: 12 }}>
+          <TextInput
+            value={quickName}
+            onChangeText={setQuickName}
+            placeholder="Nombre del medicamento..."
+            placeholderTextColor={colors.textMuted}
+            style={{ fontSize: 16, color: colors.text, padding: 14, backgroundColor: colors.cardElevated, borderRadius: 12 }}
+          />
+          
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TextInput
+              value={dosageAmount}
+              onChangeText={setDosageAmount}
+              placeholder="0"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="numeric"
+              style={{ width: 80, fontSize: 18, fontWeight: '700', color: colors.text, padding: 14, backgroundColor: colors.cardElevated, borderRadius: 12, textAlign: 'center' }}
+            />
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+              {DOSAGE_UNITS.map(unit => (
+                <Pressable
+                  key={unit}
+                  onPress={() => setDosageUnit(unit)}
+                  style={{ paddingHorizontal: 14, paddingVertical: 14, borderRadius: 12, backgroundColor: dosageUnit === unit ? colors.treatment : colors.cardElevated }}
+                >
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: dosageUnit === unit ? '#FFFFFF' : colors.textSecondary }}>{unit}</Text>
+                </Pressable>
+              ))}
             </ScrollView>
           </View>
         </View>
-      </Modal>
+      </Card>
+
+      <Button onPress={handleSaveQuickEntry} loading={loading} fullWidth size="lg" disabled={!quickName.trim()}>
+        Registrar toma
+      </Button>
     </View>
   );
 }
 
-// Activity Form - Two blocks: My workouts + Quick entry
-function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => void }) {
-  const router = useRouter();
-  const today = new Date().toISOString().split('T')[0];
-  
-  // Data
-  const [scheduledActivities, setScheduledActivities] = useState<ScheduledActivity[]>([]);
+// Activity Form (Simplified)
+function ActivityForm({ colors, onSuccess, selectedDate, router }: { colors: any; onSuccess: () => void; selectedDate: string; router: any }) {
   const [activityTypes, setActivityTypes] = useState<ActivityType[]>([]);
-  const [todayLogs, setTodayLogs] = useState<ActivityLog[]>([]);
   const [loadingData, setLoadingData] = useState(true);
-  
-  // Quick entry modal
-  const [showQuickModal, setShowQuickModal] = useState(false);
   const [selectedType, setSelectedType] = useState<ActivityType | null>(null);
   const [customName, setCustomName] = useState('');
   const [showCustom, setShowCustom] = useState(false);
   const [duration, setDuration] = useState('30');
   const [intensity, setIntensity] = useState(5);
-  const [distance, setDistance] = useState('');
-  const [calories, setCalories] = useState('');
   const [notes, setNotes] = useState('');
-  const [useCurrentTime, setUseCurrentTime] = useState(true);
-  const [customDate, setCustomDate] = useState(today);
-  const [customTime, setCustomTime] = useState(new Date().toTimeString().slice(0, 5));
   const [loading, setLoading] = useState(false);
 
   const activityColor = '#FF9800';
@@ -1873,61 +1845,16 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
   const loadData = async () => {
     try {
       const db = await getDatabase();
-      const [scheduled, types, logs] = await Promise.all([
-        db.getAllAsync<ScheduledActivity>('SELECT * FROM scheduled_activities WHERE is_active = 1 ORDER BY name'),
-        db.getAllAsync<ActivityType>('SELECT * FROM activity_types ORDER BY usage_count DESC, name ASC'),
-        db.getAllAsync<ActivityLog>(`SELECT al.*, at.name as activity_name, at.icon, at.color 
-          FROM activity_logs al 
-          LEFT JOIN activity_types at ON al.activity_type_id = at.id 
-          WHERE al.date = ? ORDER BY al.time DESC`, [today])
-      ]);
-      setScheduledActivities(scheduled);
-      setActivityTypes(types);
-      setTodayLogs(logs);
+      const types = await db.getAllAsync('SELECT * FROM activity_types ORDER BY usage_count DESC, name ASC');
+      setActivityTypes(types as ActivityType[]);
     } catch (error) {
-      console.error('Error loading activities:', error);
+      console.error('Error loading activity types:', error);
     } finally {
       setLoadingData(false);
     }
   };
 
-  const handleQuickLogScheduled = async (scheduled: ScheduledActivity) => {
-    setLoading(true);
-    try {
-      const now = new Date();
-      
-      // Find activity type
-      const actType = activityTypes.find(t => t.id === scheduled.activity_type_id);
-      
-      // Log the activity
-      await insertRow('activity_logs', {
-        activity_type_id: scheduled.activity_type_id,
-        scheduled_activity_id: scheduled.id,
-        duration_minutes: scheduled.duration_minutes || 30,
-        intensity: 5,
-        date: now.toISOString().split('T')[0],
-        time: now.toTimeString().slice(0, 5),
-      });
-      
-      // Mark as completed in scheduled_activity_logs
-      await insertRow('scheduled_activity_logs', {
-        scheduled_activity_id: scheduled.id,
-        date: now.toISOString().split('T')[0],
-        status: 'completed',
-        actual_duration_minutes: scheduled.duration_minutes || 30,
-      });
-
-      Alert.alert('¡Guardado!', `${scheduled.name} completado`);
-      loadData();
-      onSuccess();
-    } catch (error) {
-      Alert.alert('Error', 'No se pudo registrar la actividad');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSaveQuickEntry = async () => {
+  const handleSave = async () => {
     if (!selectedType && !customName.trim()) {
       Alert.alert('Error', 'Por favor, selecciona o crea un tipo de actividad');
       return;
@@ -1942,14 +1869,12 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
     try {
       const db = await getDatabase();
       const now = new Date();
-      const logDate = useCurrentTime ? now.toISOString().split('T')[0] : customDate;
-      const logTime = useCurrentTime ? now.toTimeString().slice(0, 5) : customTime;
       let activityTypeId: number;
 
       if (showCustom && customName.trim()) {
         const result = await db.runAsync(
           'INSERT INTO activity_types (name, icon, color, is_custom, usage_count) VALUES (?, ?, ?, 1, 1)',
-          [customName.trim(), 'fitness', '#FF9800']
+          [customName.trim(), 'fitness', activityColor]
         );
         activityTypeId = result.lastInsertRowId;
       } else if (selectedType) {
@@ -1965,17 +1890,12 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
         activity_type_id: activityTypeId,
         duration_minutes: parseInt(duration),
         intensity,
-        distance_km: distance ? parseFloat(distance) : null,
-        calories: calories ? parseInt(calories) : null,
-        date: logDate,
-        time: logTime,
+        date: selectedDate,
+        time: now.toTimeString().slice(0, 5),
         notes: notes.trim() || null,
       });
 
       Alert.alert('¡Guardado!', 'Actividad registrada correctamente');
-      setShowQuickModal(false);
-      resetQuickForm();
-      loadData();
       onSuccess();
     } catch (error) {
       Alert.alert('Error', 'No se pudo guardar el registro');
@@ -1984,583 +1904,111 @@ function ActivityForm({ colors, onSuccess }: { colors: any; onSuccess: () => voi
     }
   };
 
-  const resetQuickForm = () => {
-    setSelectedType(null);
-    setCustomName('');
-    setShowCustom(false);
-    setDuration('30');
-    setIntensity(5);
-    setDistance('');
-    setCalories('');
-    setNotes('');
-    setUseCurrentTime(true);
-  };
-
   return (
-    <View style={{ gap: 20 }}>
-      {/* BLOCK 1: My Workouts / Scheduled Activities */}
-      <View style={{
-        backgroundColor: colors.card,
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
-      }}>
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <View style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              backgroundColor: activityColor + '20',
-              alignItems: 'center',
-              justifyContent: 'center',
-            }}>
-              <Ionicons name="fitness" size={20} color={activityColor} />
-            </View>
-            <View>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>
-                Mis Entrenamientos
-              </Text>
-              <Text style={{ fontSize: 12, color: colors.textMuted }}>
-                Programas de ejercicio activos
-              </Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Today's activities from scheduled */}
-        {loadingData ? (
-          <View style={{ padding: 20, alignItems: 'center' }}>
-            <ActivityIndicator color={activityColor} />
-          </View>
-        ) : scheduledActivities.length === 0 ? (
-          <View style={{ 
-            padding: 24, 
-            alignItems: 'center', 
-            backgroundColor: colors.cardElevated,
-            borderRadius: 12,
-          }}>
-            <Ionicons name="barbell-outline" size={32} color={colors.textMuted} />
-            <Text style={{ fontSize: 14, color: colors.textMuted, marginTop: 8, textAlign: 'center' }}>
-              No tienes entrenamientos programados
+    <View style={{ gap: 16 }}>
+      <Card>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>
+            {showCustom ? 'Actividad personalizada' : 'Tipo de actividad'}
+          </Text>
+          <Pressable onPress={() => setShowCustom(!showCustom)}>
+            <Text style={{ fontSize: 12, color: activityColor, fontWeight: '600' }}>
+              {showCustom ? 'Ver lista' : '+ Nueva'}
             </Text>
-          </View>
+          </Pressable>
+        </View>
+        
+        {showCustom ? (
+          <TextInput
+            value={customName}
+            onChangeText={setCustomName}
+            placeholder="Nombre de la actividad..."
+            placeholderTextColor={colors.textMuted}
+            style={{ fontSize: 16, color: colors.text, padding: 14, backgroundColor: colors.cardElevated, borderRadius: 12 }}
+          />
+        ) : loadingData ? (
+          <ActivityIndicator color={activityColor} />
         ) : (
-          <View style={{ gap: 8 }}>
-            {scheduledActivities.slice(0, 5).map((scheduled) => {
-              const actType = activityTypes.find(t => t.id === scheduled.activity_type_id);
-              const todayCompleted = todayLogs.some(log => log.scheduled_activity_id === scheduled.id);
-              return (
-                <View 
-                  key={scheduled.id} 
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    padding: 12,
-                    backgroundColor: todayCompleted ? colors.fodmapLow + '15' : colors.cardElevated,
-                    borderRadius: 12,
-                    gap: 12,
-                    borderWidth: todayCompleted ? 1 : 0,
-                    borderColor: colors.fodmapLow + '30',
-                  }}
-                >
-                  <View style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 10,
-                    backgroundColor: (actType?.color || activityColor) + '20',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <Ionicons 
-                      name={(actType?.icon || 'fitness') as any} 
-                      size={18} 
-                      color={actType?.color || activityColor} 
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
-                      {scheduled.name}
-                    </Text>
-                    <Text style={{ fontSize: 12, color: colors.textMuted }}>
-                      {scheduled.duration_minutes} min · {scheduled.frequency}
-                    </Text>
-                    {todayCompleted && (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 4 }}>
-                        <Ionicons name="checkmark-circle" size={12} color={colors.fodmapLow} />
-                        <Text style={{ fontSize: 11, color: colors.fodmapLow }}>
-                          Completado hoy
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                  {!todayCompleted && (
-                    <Pressable
-                      onPress={() => handleQuickLogScheduled(scheduled)}
-                      style={{
-                        paddingHorizontal: 14,
-                        paddingVertical: 10,
-                        backgroundColor: activityColor,
-                        borderRadius: 10,
-                      }}
-                    >
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: '#FFFFFF' }}>
-                        Completar
-                      </Text>
-                    </Pressable>
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        )}
-
-        {/* Create new workout program */}
-        <Pressable
-          onPress={() => router.push('/activity/schedule')}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 14,
-            marginTop: 12,
-            backgroundColor: activityColor + '15',
-            borderRadius: 12,
-            borderWidth: 1,
-            borderColor: activityColor + '30',
-            borderStyle: 'dashed',
-            gap: 8,
-          }}
-        >
-          <Ionicons name="add-circle-outline" size={20} color={activityColor} />
-          <Text style={{ fontSize: 14, fontWeight: '600', color: activityColor }}>
-            Crear programa de entrenamiento
-          </Text>
-        </Pressable>
-
-        {/* Link to manage all workouts */}
-        <Pressable
-          onPress={() => router.push('/activity')}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            paddingVertical: 10,
-            marginTop: 8,
-            gap: 6,
-          }}
-        >
-          <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-            Ver todos mis entrenamientos
-          </Text>
-          <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
-        </Pressable>
-      </View>
-
-      {/* BLOCK 2: Quick Activity Entry */}
-      <View style={{
-        backgroundColor: colors.card,
-        borderRadius: 16,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: colors.border,
-      }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <View style={{
-            width: 36,
-            height: 36,
-            borderRadius: 10,
-            backgroundColor: '#10B981' + '20',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}>
-            <Ionicons name="flash" size={20} color="#10B981" />
-          </View>
-          <View>
-            <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>
-              Actividad Puntual
-            </Text>
-            <Text style={{ fontSize: 12, color: colors.textMuted }}>
-              Registra cualquier actividad física rápidamente
-            </Text>
-          </View>
-        </View>
-
-        {/* Today's quick logs */}
-        {todayLogs.filter(log => !log.scheduled_activity_id).length > 0 && (
-          <View style={{ marginBottom: 12 }}>
-            <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 8 }}>
-              Actividades de hoy:
-            </Text>
-            <View style={{ gap: 6 }}>
-              {todayLogs.filter(log => !log.scheduled_activity_id).slice(0, 3).map((log: any) => (
-                <View 
-                  key={log.id}
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    padding: 10,
-                    backgroundColor: colors.cardElevated,
-                    borderRadius: 8,
-                    gap: 8,
-                  }}
-                >
-                  <Ionicons name={(log.icon || 'fitness') as any} size={14} color={log.color || activityColor} />
-                  <Text style={{ fontSize: 13, color: colors.text, flex: 1 }}>
-                    {log.activity_name || 'Actividad'}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: colors.textMuted }}>
-                    {log.duration_minutes}min · {log.time}
-                  </Text>
-                </View>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Quick entry button */}
-        <Pressable
-          onPress={() => setShowQuickModal(true)}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: 16,
-            backgroundColor: '#10B981',
-            borderRadius: 12,
-            gap: 10,
-          }}
-        >
-          <Ionicons name="add-circle" size={22} color="#FFFFFF" />
-          <Text style={{ fontSize: 15, fontWeight: '700', color: '#FFFFFF' }}>
-            Registrar actividad
-          </Text>
-        </Pressable>
-      </View>
-
-      {/* Quick Entry Modal */}
-      <Modal
-        visible={showQuickModal}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setShowQuickModal(false)}
-      >
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
-          <View style={{ 
-            backgroundColor: colors.card, 
-            borderTopLeftRadius: 24, 
-            borderTopRightRadius: 24,
-            maxHeight: '92%',
-          }}>
-            {/* Modal Header */}
-            <View style={{ 
-              flexDirection: 'row', 
-              justifyContent: 'space-between', 
-              alignItems: 'center',
-              padding: 16,
-              borderBottomWidth: 1,
-              borderBottomColor: colors.border,
-            }}>
-              <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
-                Actividad Puntual
-              </Text>
-              <Pressable onPress={() => setShowQuickModal(false)}>
-                <Ionicons name="close" size={24} color={colors.text} />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+            {activityTypes.slice(0, 12).map((type) => (
+              <Pressable
+                key={type.id}
+                onPress={() => setSelectedType(type)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  paddingHorizontal: 12,
+                  paddingVertical: 8,
+                  borderRadius: 16,
+                  backgroundColor: selectedType?.id === type.id ? type.color : colors.cardElevated,
+                  gap: 6,
+                }}
+              >
+                <Ionicons name={type.icon as any} size={14} color={selectedType?.id === type.id ? '#FFFFFF' : type.color} />
+                <Text style={{ fontSize: 12, fontWeight: '600', color: selectedType?.id === type.id ? '#FFFFFF' : colors.textSecondary }}>
+                  {type.name}
+                </Text>
               </Pressable>
-            </View>
-
-            <ScrollView style={{ padding: 16 }} showsVerticalScrollIndicator={false}>
-              <View style={{ gap: 16, paddingBottom: 32 }}>
-                {/* Activity Type */}
-                <View>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary }}>
-                      {showCustom ? 'Actividad personalizada' : 'Tipo de actividad'}
-                    </Text>
-                    <Pressable onPress={() => setShowCustom(!showCustom)}>
-                      <Text style={{ fontSize: 12, color: '#10B981', fontWeight: '600' }}>
-                        {showCustom ? 'Ver lista' : '+ Nueva'}
-                      </Text>
-                    </Pressable>
-                  </View>
-                  
-                  {showCustom ? (
-                    <TextInput
-                      value={customName}
-                      onChangeText={setCustomName}
-                      placeholder="Nombre de la actividad..."
-                      placeholderTextColor={colors.textMuted}
-                      style={{
-                        fontSize: 16,
-                        color: colors.text,
-                        padding: 14,
-                        backgroundColor: colors.cardElevated,
-                        borderRadius: 12,
-                      }}
-                    />
-                  ) : (
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-                      {activityTypes.slice(0, 12).map((type) => (
-                        <Pressable
-                          key={type.id}
-                          onPress={() => setSelectedType(type)}
-                          style={{
-                            flexDirection: 'row',
-                            alignItems: 'center',
-                            paddingHorizontal: 12,
-                            paddingVertical: 8,
-                            borderRadius: 16,
-                            backgroundColor: selectedType?.id === type.id ? type.color : colors.cardElevated,
-                            gap: 6,
-                          }}
-                        >
-                          <Ionicons 
-                            name={type.icon as any} 
-                            size={14} 
-                            color={selectedType?.id === type.id ? '#FFFFFF' : type.color} 
-                          />
-                          <Text style={{
-                            fontSize: 12,
-                            fontWeight: '600',
-                            color: selectedType?.id === type.id ? '#FFFFFF' : colors.textSecondary,
-                          }}>
-                            {type.name}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  )}
-                </View>
-
-                {/* Duration and Distance */}
-                <View style={{ flexDirection: 'row', gap: 12 }}>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-                      Duración (min)
-                    </Text>
-                    <TextInput
-                      value={duration}
-                      onChangeText={setDuration}
-                      placeholder="30"
-                      placeholderTextColor={colors.textMuted}
-                      keyboardType="numeric"
-                      style={{
-                        fontSize: 18,
-                        fontWeight: '700',
-                        color: colors.text,
-                        padding: 12,
-                        backgroundColor: colors.cardElevated,
-                        borderRadius: 10,
-                        textAlign: 'center',
-                      }}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-                      Distancia (km)
-                    </Text>
-                    <TextInput
-                      value={distance}
-                      onChangeText={setDistance}
-                      placeholder="—"
-                      placeholderTextColor={colors.textMuted}
-                      keyboardType="decimal-pad"
-                      style={{
-                        fontSize: 18,
-                        fontWeight: '700',
-                        color: colors.text,
-                        padding: 12,
-                        backgroundColor: colors.cardElevated,
-                        borderRadius: 10,
-                        textAlign: 'center',
-                      }}
-                    />
-                  </View>
-                </View>
-
-                {/* Intensity */}
-                <View>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>
-                    Intensidad: {intensity}/10
-                  </Text>
-                  <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8 }}>
-                    {INTENSITY_LABELS[intensity]}
-                  </Text>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 4 }}>
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
-                      <Pressable
-                        key={level}
-                        onPress={() => setIntensity(level)}
-                        style={{
-                          flex: 1,
-                          aspectRatio: 1,
-                          maxWidth: 28,
-                          borderRadius: 8,
-                          backgroundColor: intensity >= level 
-                            ? level <= 3 ? colors.fodmapLow 
-                              : level <= 6 ? activityColor 
-                              : colors.fodmapHigh
-                            : colors.cardElevated,
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                        }}
-                      >
-                        <Text style={{
-                          fontSize: 10,
-                          fontWeight: '600',
-                          color: intensity >= level ? '#FFFFFF' : colors.textMuted,
-                        }}>
-                          {level}
-                        </Text>
-                      </Pressable>
-                    ))}
-                  </View>
-                </View>
-
-                {/* Timestamp */}
-                <View>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-                    ¿Cuándo?
-                  </Text>
-                  <View style={{ flexDirection: 'row', gap: 8 }}>
-                    <Pressable
-                      onPress={() => setUseCurrentTime(true)}
-                      style={{
-                        flex: 1,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 6,
-                        padding: 12,
-                        borderRadius: 10,
-                        backgroundColor: useCurrentTime ? '#10B981' : colors.cardElevated,
-                      }}
-                    >
-                      <Ionicons name="time" size={16} color={useCurrentTime ? '#FFFFFF' : colors.textSecondary} />
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: useCurrentTime ? '#FFFFFF' : colors.textSecondary }}>
-                        Ahora
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => setUseCurrentTime(false)}
-                      style={{
-                        flex: 1,
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        gap: 6,
-                        padding: 12,
-                        borderRadius: 10,
-                        backgroundColor: !useCurrentTime ? '#10B981' : colors.cardElevated,
-                      }}
-                    >
-                      <Ionicons name="calendar" size={16} color={!useCurrentTime ? '#FFFFFF' : colors.textSecondary} />
-                      <Text style={{ fontSize: 13, fontWeight: '600', color: !useCurrentTime ? '#FFFFFF' : colors.textSecondary }}>
-                        Otra hora
-                      </Text>
-                    </Pressable>
-                  </View>
-                  {!useCurrentTime && (
-                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
-                      <TextInput
-                        value={customDate}
-                        onChangeText={setCustomDate}
-                        placeholder="YYYY-MM-DD"
-                        placeholderTextColor={colors.textMuted}
-                        style={{
-                          flex: 1,
-                          fontSize: 14,
-                          color: colors.text,
-                          padding: 12,
-                          backgroundColor: colors.cardElevated,
-                          borderRadius: 10,
-                          textAlign: 'center',
-                        }}
-                      />
-                      <TextInput
-                        value={customTime}
-                        onChangeText={setCustomTime}
-                        placeholder="HH:MM"
-                        placeholderTextColor={colors.textMuted}
-                        style={{
-                          flex: 1,
-                          fontSize: 14,
-                          color: colors.text,
-                          padding: 12,
-                          backgroundColor: colors.cardElevated,
-                          borderRadius: 10,
-                          textAlign: 'center',
-                        }}
-                      />
-                    </View>
-                  )}
-                </View>
-
-                {/* Calories */}
-                <View>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-                    Calorías (opcional)
-                  </Text>
-                  <TextInput
-                    value={calories}
-                    onChangeText={setCalories}
-                    placeholder="Ej: 200"
-                    placeholderTextColor={colors.textMuted}
-                    keyboardType="numeric"
-                    style={{
-                      fontSize: 16,
-                      color: colors.text,
-                      padding: 12,
-                      backgroundColor: colors.cardElevated,
-                      borderRadius: 10,
-                    }}
-                  />
-                </View>
-
-                {/* Notes */}
-                <View>
-                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-                    Notas (opcional)
-                  </Text>
-                  <TextInput
-                    value={notes}
-                    onChangeText={setNotes}
-                    placeholder="Cómo te sentiste, detalles..."
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    style={{
-                      fontSize: 15,
-                      color: colors.text,
-                      padding: 12,
-                      backgroundColor: colors.cardElevated,
-                      borderRadius: 10,
-                      minHeight: 60,
-                      textAlignVertical: 'top',
-                    }}
-                  />
-                </View>
-
-                {/* Save button */}
-                <Button 
-                  onPress={handleSaveQuickEntry} 
-                  loading={loading} 
-                  fullWidth 
-                  size="lg"
-                  disabled={!selectedType && !customName.trim()}
-                >
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                    <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
-                    <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
-                      Guardar actividad
-                    </Text>
-                  </View>
-                </Button>
-              </View>
-            </ScrollView>
+            ))}
           </View>
+        )}
+      </Card>
+
+      <Card>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>Duración (minutos)</Text>
+        <TextInput
+          value={duration}
+          onChangeText={setDuration}
+          placeholder="30"
+          placeholderTextColor={colors.textMuted}
+          keyboardType="numeric"
+          style={{ fontSize: 24, fontWeight: '700', color: colors.text, padding: 12, backgroundColor: colors.cardElevated, borderRadius: 10, textAlign: 'center' }}
+        />
+      </Card>
+
+      <Card>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 4 }}>
+          Intensidad: {intensity}/10
+        </Text>
+        <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 8 }}>{INTENSITY_LABELS[intensity]}</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 4 }}>
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((level) => (
+            <Pressable
+              key={level}
+              onPress={() => setIntensity(level)}
+              style={{
+                flex: 1,
+                aspectRatio: 1,
+                maxWidth: 28,
+                borderRadius: 8,
+                backgroundColor: intensity >= level 
+                  ? level <= 3 ? colors.fodmapLow : level <= 6 ? activityColor : colors.fodmapHigh
+                  : colors.cardElevated,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 10, fontWeight: '600', color: intensity >= level ? '#FFFFFF' : colors.textMuted }}>{level}</Text>
+            </Pressable>
+          ))}
         </View>
-      </Modal>
+      </Card>
+
+      <Card>
+        <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>Notas (opcional)</Text>
+        <TextInput
+          value={notes}
+          onChangeText={setNotes}
+          placeholder="Cómo te sentiste, detalles..."
+          placeholderTextColor={colors.textMuted}
+          multiline
+          style={{ fontSize: 15, color: colors.text, padding: 12, backgroundColor: colors.cardElevated, borderRadius: 10, minHeight: 60, textAlignVertical: 'top' }}
+        />
+      </Card>
+
+      <Button onPress={handleSave} loading={loading} fullWidth size="lg" disabled={!selectedType && !customName.trim()}>
+        Guardar actividad
+      </Button>
     </View>
   );
 }

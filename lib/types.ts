@@ -639,3 +639,66 @@ export interface UserSettings {
   default_meal_times: Record<MealType, string>;
   external_recipes_enabled: boolean;
 }
+
+// ============================================================
+// USER PROFILE & WEIGHT
+// ============================================================
+
+export type Gender = 'male' | 'female' | 'other';
+
+export interface UserProfile {
+  id: number;
+  birth_date: string | null; // ISO date string YYYY-MM-DD
+  gender: Gender | null;
+  height_cm: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WeightLog {
+  id: number;
+  weight_kg: number;
+  date: string; // ISO date string YYYY-MM-DD
+  time: string; // HH:MM
+  notes?: string;
+  created_at: string;
+}
+
+// BMI Categories
+export type BMICategory = 'underweight' | 'normal' | 'overweight' | 'obese';
+
+export const BMI_CATEGORIES = {
+  underweight: { min: 0, max: 18.5, label: 'Bajo peso', color: '#3B82F6' },
+  normal: { min: 18.5, max: 25, label: 'Normal', color: '#22C55E' },
+  overweight: { min: 25, max: 30, label: 'Sobrepeso', color: '#F59E0B' },
+  obese: { min: 30, max: 100, label: 'Obesidad', color: '#EF4444' },
+} as const;
+
+export function calculateAge(birthDate: string): number {
+  const today = new Date();
+  const birth = new Date(birthDate);
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDiff = today.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age;
+}
+
+export function calculateBMI(weightKg: number, heightCm: number): number {
+  const heightM = heightCm / 100;
+  return weightKg / (heightM * heightM);
+}
+
+export function getBMICategory(bmi: number): BMICategory {
+  if (bmi < 18.5) return 'underweight';
+  if (bmi < 25) return 'normal';
+  if (bmi < 30) return 'overweight';
+  return 'obese';
+}
+
+export const GENDER_LABELS: Record<Gender, string> = {
+  male: 'Masculino',
+  female: 'Femenino',
+  other: 'Otro',
+};

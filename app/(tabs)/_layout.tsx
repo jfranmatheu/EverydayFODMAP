@@ -107,19 +107,17 @@ export default function TabLayout() {
       <Tabs.Screen
         name="log"
         options={{
-          title: 'Registro',
+          title: 'Diario',
           tabBarIcon: ({ color, focused }) => (
-            <TabIcon name={focused ? 'add-circle' : 'add-circle-outline'} color={color} focused={focused} />
+            <TabIcon name={focused ? 'today' : 'today-outline'} color={color} focused={focused} />
           ),
         }}
       />
       <Tabs.Screen
         name="calendar"
         options={{
+          href: null, // Functionality moved to log tab
           title: 'Calendario',
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon name={focused ? 'calendar' : 'calendar-outline'} color={color} focused={focused} />
-          ),
         }}
       />
       <Tabs.Screen
@@ -134,10 +132,8 @@ export default function TabLayout() {
       <Tabs.Screen
         name="settings"
         options={{
+          href: null, // Hide from tab bar, accessible via router.push
           title: 'Ajustes',
-          tabBarIcon: ({ color, focused }) => (
-            <TabIcon name={focused ? 'settings' : 'settings-outline'} color={color} focused={focused} />
-          ),
         }}
       />
     </Tabs>

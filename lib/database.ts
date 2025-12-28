@@ -48,24 +48,37 @@ if (typeof window !== 'undefined') {
   };
 }
 
-// Helper to parse INSERT query and extract column names
-function parseInsertQuery(sql: string): { table: string; columns: string[] } | null {
+// Helper to parse INSERT query and extract column names and value info
+function parseInsertQuery(sql: string): { table: string; columns: string[]; literalValues: (any | null)[] } | null {
   // Normalize whitespace (handle multiline queries)
   const normalizedSql = sql.replace(/\s+/g, ' ').trim();
   
   // Match: INSERT INTO table (col1, col2, ...) VALUES (?, ?, ...)
-  const match = normalizedSql.match(/INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)\s*\(([^)]+)\)/i);
+  const match = normalizedSql.match(/INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i);
   if (match) {
     const table = match[1];
     const columns = match[2].split(',').map(c => c.trim());
-    console.log(`[WebDB] Parsed INSERT: table=${table}, columns=`, columns);
-    return { table, columns };
+    const valuesStr = match[3];
+    
+    // Parse values to detect literals vs placeholders
+    const valuesParts = valuesStr.split(',').map(v => v.trim());
+    const literalValues: (any | null)[] = valuesParts.map(v => {
+      if (v === '?') return null; // placeholder
+      if (v === 'CURRENT_TIMESTAMP') return new Date().toISOString();
+      if (v.match(/^'[^']*'$/)) return v.slice(1, -1); // string literal
+      if (v.match(/^-?\d+(\.\d+)?$/)) return parseFloat(v); // number literal
+      if (v.toLowerCase() === 'null') return undefined; // NULL literal
+      return null; // treat as placeholder if unclear
+    });
+    
+    console.log(`[WebDB] Parsed INSERT: table=${table}, columns=`, columns, 'literalValues=', literalValues);
+    return { table, columns, literalValues };
   }
   // Match: INSERT INTO table VALUES (...)
   const simpleMatch = normalizedSql.match(/INSERT\s+(?:OR\s+\w+\s+)?INTO\s+(\w+)\s+VALUES/i);
   if (simpleMatch) {
     console.log(`[WebDB] Parsed simple INSERT: table=${simpleMatch[1]}`);
-    return { table: simpleMatch[1], columns: [] };
+    return { table: simpleMatch[1], columns: [], literalValues: [] };
   }
   console.log(`[WebDB] Could not parse INSERT query: ${normalizedSql.substring(0, 100)}`);
   return null;
@@ -89,33 +102,52 @@ function filterByWhere(items: any[], sql: string, params?: any[]): any[] {
     return items;
   }
   
-  // WHERE clause exists but no params - return all items (for queries like WHERE 1=1)
-  if (!params || params.length === 0) {
-    return items;
-  }
-  
   const whereClause = whereMatch[1];
   
   // Handle: date BETWEEN ? AND ?
-  if (whereClause.toLowerCase().includes('between')) {
+  if (whereClause.toLowerCase().includes('between') && params && params.length >= 2) {
     const startDate = params[0];
     const endDate = params[1];
     return items.filter(item => item.date >= startDate && item.date <= endDate);
   }
   
-  // Generic handler: extract column name from "column = ?" pattern
-  const columnMatch = whereClause.match(/(\w+)\s*=\s*\?/);
-  if (columnMatch) {
-    const column = columnMatch[1];
-    const value = params[0];
-    console.log(`[WebDB] Filtering by ${column} = ${value}, items before: ${items.length}`);
+  // Handle literal values in WHERE: column = number (e.g., WHERE id = 1)
+  const literalNumberMatch = whereClause.match(/(\w+)\s*=\s*(\d+)/);
+  if (literalNumberMatch) {
+    const column = literalNumberMatch[1];
+    const value = parseInt(literalNumberMatch[2]);
+    console.log(`[WebDB] Filtering by ${column} = ${value} (literal), items before: ${items.length}`);
     const filtered = items.filter(item => valuesEqual(item[column], value));
     console.log(`[WebDB] After filter: ${filtered.length}`);
     return filtered;
   }
   
+  // Handle literal string values: column = 'value'
+  const literalStringMatch = whereClause.match(/(\w+)\s*=\s*'([^']+)'/);
+  if (literalStringMatch) {
+    const column = literalStringMatch[1];
+    const value = literalStringMatch[2];
+    console.log(`[WebDB] Filtering by ${column} = '${value}' (literal string), items before: ${items.length}`);
+    const filtered = items.filter(item => valuesEqual(item[column], value));
+    console.log(`[WebDB] After filter: ${filtered.length}`);
+    return filtered;
+  }
+  
+  // Handle placeholder: column = ?
+  if (params && params.length > 0) {
+    const columnMatch = whereClause.match(/(\w+)\s*=\s*\?/);
+    if (columnMatch) {
+      const column = columnMatch[1];
+      const value = params[0];
+      console.log(`[WebDB] Filtering by ${column} = ${value} (param), items before: ${items.length}`);
+      const filtered = items.filter(item => valuesEqual(item[column], value));
+      console.log(`[WebDB] After filter: ${filtered.length}`);
+      return filtered;
+    }
+  }
+  
   // Default: return all items if we can't parse the WHERE clause
-  console.log(`[WebDB] Unhandled WHERE clause: ${whereClause}`);
+  console.log(`[WebDB] Unhandled WHERE clause: ${whereClause}, returning all ${items.length} items`);
   return items;
 }
 
@@ -147,28 +179,57 @@ function createWebMockDatabase() {
       // Handle INSERT
       const insertInfo = parseInsertQuery(sql);
       if (insertInfo) {
-        const { table, columns } = insertInfo;
+        const { table, columns, literalValues } = insertInfo;
         if (!webStorage[table]) {
           webStorage[table] = [];
           console.log(`[WebDB] Auto-created table: ${table}`);
         }
         
-        // Generate unique ID
-        const maxId = webStorage[table].reduce((max, item) => Math.max(max, item.id || 0), 0);
-        const id = maxId + 1;
+        // Generate unique ID (unless provided in literal values)
+        const idColIndex = columns.indexOf('id');
+        let id: number;
+        let existingItemIndex = -1;
+        
+        if (idColIndex !== -1 && literalValues[idColIndex] !== null) {
+          id = literalValues[idColIndex] as number;
+          // Check if item with this ID already exists
+          existingItemIndex = webStorage[table].findIndex((item: any) => item.id === id);
+        } else {
+          const maxId = webStorage[table].reduce((max, item) => Math.max(max, item.id || 0), 0);
+          id = maxId + 1;
+        }
         
         const newRow: Record<string, any> = { id, created_at: new Date().toISOString() };
         
-        if (columns.length > 0 && params) {
+        if (columns.length > 0) {
+          let paramIndex = 0;
           columns.forEach((col, i) => {
-            if (params[i] !== undefined) {
-              newRow[col] = params[i];
+            if (col === 'id' && idColIndex !== -1 && literalValues[idColIndex] !== null) {
+              // ID was a literal, already set
+              return;
+            }
+            if (literalValues[i] !== null && literalValues[i] !== undefined) {
+              // Use literal value
+              newRow[col] = literalValues[i];
+            } else if (params && paramIndex < params.length) {
+              // Use next param value
+              newRow[col] = params[paramIndex];
+              paramIndex++;
             }
           });
         }
         
-        webStorage[table].push(newRow);
-        console.log(`[WebDB] INSERT into ${table}:`, newRow);
+        // If item exists with same ID, update it instead of creating duplicate
+        if (existingItemIndex !== -1) {
+          const existingItem = webStorage[table][existingItemIndex];
+          Object.assign(existingItem, newRow);
+          existingItem.updated_at = new Date().toISOString();
+          console.log(`[WebDB] INSERT updated existing row in ${table}:`, existingItem);
+        } else {
+          webStorage[table].push(newRow);
+          console.log(`[WebDB] INSERT into ${table}:`, newRow);
+        }
+        
         console.log(`[WebDB] Table ${table} now has ${webStorage[table].length} rows`);
         saveWebStorage();
         return { lastInsertRowId: id };
@@ -226,22 +287,74 @@ function createWebMockDatabase() {
       }
       
       // Handle UPDATE
-      const updateMatch = sql.match(/UPDATE (\w+) SET (.+) WHERE id = \?/i);
+      const normalizedUpdate = sql.replace(/\s+/g, ' ').trim();
+      const updateMatch = normalizedUpdate.match(/UPDATE\s+(\w+)\s+SET\s+(.+?)\s+WHERE\s+(.+)/i);
       if (updateMatch && params) {
         const table = updateMatch[1];
         const setClause = updateMatch[2];
+        const whereClause = updateMatch[3];
         const items = webStorage[table] || [];
-        const id = params[params.length - 1];
-        const item = items.find((i: any) => i.id === id);
-        if (item) {
-          const setCols = setClause.split(',').map(s => s.split('=')[0].trim());
-          setCols.forEach((col, i) => {
-            if (col !== 'updated_at' && params[i] !== undefined) {
-              item[col] = params[i];
+        
+        // Parse SET clause to get column names and detect literals vs placeholders
+        const setAssignments = setClause.split(',').map(s => {
+          const parts = s.split('=');
+          const col = parts[0].trim();
+          const value = parts[1]?.trim() || '';
+          const isPlaceholder = value === '?';
+          let literalValue: any = null;
+          if (!isPlaceholder) {
+            if (value === 'CURRENT_TIMESTAMP') {
+              literalValue = new Date().toISOString();
+            } else if (value.match(/^'[^']*'$/)) {
+              literalValue = value.slice(1, -1);
+            } else if (value.match(/^-?\d+(\.\d+)?$/)) {
+              literalValue = parseFloat(value);
+            }
+          }
+          return { col, isPlaceholder, literalValue };
+        });
+        
+        // Determine which item to update based on WHERE clause
+        let targetItem: any = null;
+        let whereUsesParam = false;
+        
+        // Handle WHERE id = 1 (literal)
+        const literalIdMatch = whereClause.match(/id\s*=\s*(\d+)/i);
+        if (literalIdMatch) {
+          const id = parseInt(literalIdMatch[1]);
+          targetItem = items.find((i: any) => i.id === id);
+        } 
+        // Handle WHERE id = ?
+        else if (whereClause.match(/id\s*=\s*\?/i)) {
+          whereUsesParam = true;
+          const id = params[params.length - 1];
+          targetItem = items.find((i: any) => i.id === id);
+        }
+        // Handle WHERE column = ?
+        else {
+          const colMatch = whereClause.match(/(\w+)\s*=\s*\?/i);
+          if (colMatch) {
+            whereUsesParam = true;
+            const col = colMatch[1];
+            const value = params[params.length - 1];
+            targetItem = items.find((i: any) => valuesEqual(i[col], value));
+          }
+        }
+        
+        if (targetItem) {
+          let paramIndex = 0;
+          const maxParamIndex = whereUsesParam ? params.length - 1 : params.length;
+          
+          setAssignments.forEach(({ col, isPlaceholder, literalValue }) => {
+            if (isPlaceholder && paramIndex < maxParamIndex) {
+              targetItem[col] = params[paramIndex];
+              paramIndex++;
+            } else if (!isPlaceholder && literalValue !== null) {
+              targetItem[col] = literalValue;
             }
           });
-          item.updated_at = new Date().toISOString();
-          console.log(`[WebDB] UPDATE ${table}:`, item);
+          
+          console.log(`[WebDB] UPDATE ${table}:`, targetItem);
           saveWebStorage();
         }
       }
@@ -510,6 +623,8 @@ export async function initDatabase(): Promise<void> {
       CREATE TABLE IF NOT EXISTS scheduled_activities;
       CREATE TABLE IF NOT EXISTS scheduled_activity_logs;
       CREATE TABLE IF NOT EXISTS ingredients;
+      CREATE TABLE IF NOT EXISTS user_profile;
+      CREATE TABLE IF NOT EXISTS weight_logs;
     `);
     
     // Add default activity types for web (only if not already set)
@@ -796,6 +911,26 @@ export async function initDatabase(): Promise<void> {
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
+    );
+
+    -- User profile table
+    CREATE TABLE IF NOT EXISTS user_profile (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      birth_date TEXT,
+      gender TEXT CHECK(gender IN ('male', 'female', 'other') OR gender IS NULL),
+      height_cm REAL,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- Weight logs table
+    CREATE TABLE IF NOT EXISTS weight_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      weight_kg REAL NOT NULL,
+      date TEXT NOT NULL,
+      time TEXT NOT NULL,
+      notes TEXT,
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
 
     -- Default meals per day of week
