@@ -1,7 +1,7 @@
 import { Button, Card } from '@/components/ui';
 import { useDatabase } from '@/contexts/DatabaseContext';
 import { useTheme } from '@/contexts/ThemeContext';
-import { getDatabase, insertRow } from '@/lib/database';
+import { deleteRow, getDatabase, insertRow } from '@/lib/database';
 import {
   ActivityType,
   BRISTOL_SCALE,
@@ -9,15 +9,18 @@ import {
   INTENSITY_LABELS,
   MEAL_TYPE_LABELS,
   MealType,
+  NutritionInfo,
   SYMPTOM_TYPES,
   Treatment
 } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -32,8 +35,17 @@ import Animated, {
 
 type LogType = 'water' | 'symptom' | 'bowel' | 'treatment' | 'activity';
 
-// Meal types order for display
+// Meal types order for display with icons based on time of day
 const MEAL_TYPES_ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack', 'other'];
+
+const MEAL_TYPE_ICONS: Record<MealType, keyof typeof Ionicons.glyphMap> = {
+  breakfast: 'sunny',
+  lunch: 'partly-sunny',
+  dinner: 'moon',
+  snack: 'cafe',
+  dessert: 'ice-cream',
+  other: 'restaurant',
+};
 
 interface MealWithItems {
   id: number;
@@ -42,6 +54,8 @@ interface MealWithItems {
   date: string;
   time: string;
   notes: string | null;
+  image_uri: string | null;
+  total_calories: number;
   items: MealItem[];
 }
 
@@ -54,6 +68,8 @@ interface MealItem {
   quantity: number;
   unit: string;
   fodmap_level?: string;
+  calories?: number;
+  nutrition?: NutritionInfo;
 }
 
 interface DayDetails {
@@ -89,6 +105,13 @@ export default function LogScreen() {
   // Meal editing
   const [editingMealType, setEditingMealType] = useState<MealType | null>(null);
   const [showMealEditor, setShowMealEditor] = useState(false);
+  
+  // Meal item editing
+  const [editingMealItem, setEditingMealItem] = useState<MealItem | null>(null);
+  const [showMealItemEditor, setShowMealItemEditor] = useState(false);
+  
+  // Expanded meal sections
+  const [expandedMeals, setExpandedMeals] = useState<Set<MealType>>(new Set());
 
   const activityColor = '#FF9800';
   const today = new Date().toISOString().split('T')[0];
@@ -121,7 +144,9 @@ export default function LogScreen() {
       const mealsWithItems: MealWithItems[] = [];
       for (const meal of mealsRaw as any[]) {
         const items = await db.getAllAsync(
-          `SELECT mi.*, f.name as food_name, f.fodmap_level as food_fodmap, r.name as recipe_name, r.fodmap_level as recipe_fodmap
+          `SELECT mi.*, 
+                  f.name as food_name, f.fodmap_level as food_fodmap, f.nutrition as food_nutrition,
+                  r.name as recipe_name, r.fodmap_level as recipe_fodmap, r.nutrition as recipe_nutrition
            FROM meal_items mi
            LEFT JOIN foods f ON mi.food_id = f.id
            LEFT JOIN recipes r ON mi.recipe_id = r.id
@@ -129,14 +154,35 @@ export default function LogScreen() {
           [meal.id]
         );
         
-        const processedItems = items.map((item: any) => ({
-          ...item,
-          name: item.name || item.food_name || item.recipe_name || 'Item',
-          fodmap_level: item.fodmap_level || item.food_fodmap || item.recipe_fodmap,
-        }));
+        let totalCalories = 0;
+        const processedItems = items.map((item: any) => {
+          // Parse nutrition JSON if available
+          let nutrition: NutritionInfo | undefined;
+          try {
+            const nutritionStr = item.food_nutrition || item.recipe_nutrition;
+            if (nutritionStr) {
+              nutrition = typeof nutritionStr === 'string' ? JSON.parse(nutritionStr) : nutritionStr;
+            }
+          } catch (e) {
+            nutrition = undefined;
+          }
+          
+          const itemCalories = nutrition?.calories ? (nutrition.calories * (item.quantity || 1)) : 0;
+          totalCalories += itemCalories;
+          
+          return {
+            ...item,
+            name: item.name || item.food_name || item.recipe_name || 'Item',
+            fodmap_level: item.fodmap_level || item.food_fodmap || item.recipe_fodmap,
+            calories: itemCalories,
+            nutrition,
+          };
+        });
         
         mealsWithItems.push({
           ...meal,
+          image_uri: meal.image_uri || null,
+          total_calories: totalCalories,
           items: processedItems,
         });
       }
@@ -321,78 +367,244 @@ export default function LogScreen() {
     </View>
   );
 
-  // Meal Type Sub-section Component
+  const toggleMealExpanded = (mealType: MealType) => {
+    setExpandedMeals(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(mealType)) {
+        newSet.delete(mealType);
+      } else {
+        newSet.add(mealType);
+      }
+      return newSet;
+    });
+  };
+
+  const handlePickImage = async (mealType: MealType) => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const imageUri = result.assets[0].uri;
+        const db = await getDatabase();
+        const meal = getMealForType(mealType);
+        
+        if (meal) {
+          await db.runAsync(
+            'UPDATE meals SET image_uri = ? WHERE id = ?',
+            [imageUri, meal.id]
+          );
+        } else {
+          // Create meal if it doesn't exist
+          const now = new Date();
+          await db.runAsync(
+            'INSERT INTO meals (name, meal_type, date, time, image_uri) VALUES (?, ?, ?, ?, ?)',
+            [MEAL_TYPE_LABELS[mealType], mealType, selectedDate, now.toTimeString().slice(0, 5), imageUri]
+          );
+        }
+        await loadDayDetails();
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'No se pudo seleccionar la imagen');
+    }
+  };
+
+  const handleEditItem = (item: MealItem) => {
+    setEditingMealItem(item);
+    setShowMealItemEditor(true);
+  };
+
+  // Meal Type Sub-section Component - NEW DESIGN
   const MealTypeSection = ({ mealType }: { mealType: MealType }) => {
     const meal = getMealForType(mealType);
     const itemCount = meal?.items.length || 0;
+    const totalCalories = meal?.total_calories || 0;
+    const isExpanded = expandedMeals.has(mealType);
+    const imageUri = meal?.image_uri;
     
+    const getFodmapColor = (level: string | undefined) => {
+      switch (level) {
+        case 'low': return colors.fodmapLow;
+        case 'medium': return colors.fodmapMedium;
+        case 'high': return colors.fodmapHigh;
+        default: return colors.textMuted;
+      }
+    };
+
     return (
       <View style={{
-        padding: 12,
-        backgroundColor: colors.cardElevated,
-        borderRadius: 12,
-        marginBottom: 8,
+        backgroundColor: colors.card,
+        borderRadius: 16,
+        marginBottom: 12,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: colors.border,
       }}>
-        <View style={{ 
-          flexDirection: 'row', 
-          alignItems: 'center', 
+        {/* Photo (if exists) */}
+        {imageUri && (
+          <Image 
+            source={{ uri: imageUri }} 
+            style={{ 
+              width: '100%', 
+              height: 120, 
+              backgroundColor: colors.cardElevated,
+            }}
+            resizeMode="cover"
+          />
+        )}
+        
+        {/* Header - Lighter background */}
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
           justifyContent: 'space-between',
+          padding: 14,
+          backgroundColor: colors.cardElevated,
+          borderBottomWidth: isExpanded && itemCount > 0 ? 1 : 0,
+          borderBottomColor: colors.border,
         }}>
-          <View style={{ flex: 1 }}>
-            <Text style={{ 
-              fontSize: 14, 
-              fontWeight: '600', 
-              color: colors.text,
-              marginBottom: 2,
-            }}>
-              {MEAL_TYPE_LABELS[mealType]}
-            </Text>
-            {itemCount > 0 ? (
-              <View style={{ marginTop: 4 }}>
-                {meal!.items.slice(0, 3).map((item, idx) => (
-                  <Text 
-                    key={item.id || idx} 
-                    style={{ 
-                      fontSize: 12, 
-                      color: colors.textSecondary,
-                      marginTop: idx > 0 ? 2 : 0,
-                    }}
-                    numberOfLines={1}
-                  >
-                    • {item.name}
-                  </Text>
-                ))}
-                {meal!.items.length > 3 && (
-                  <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>
-                    + {meal!.items.length - 3} más
-                  </Text>
-                )}
-              </View>
-            ) : (
-              <Text style={{ fontSize: 12, color: colors.textMuted }}>
-                Sin registrar
-              </Text>
-            )}
-          </View>
-          
-          <Pressable
-            onPress={() => handleEditMeal(mealType)}
-            style={{
+          <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+            <View style={{
               width: 36,
               height: 36,
-              borderRadius: 18,
-              backgroundColor: colors.primary + '15',
+              borderRadius: 10,
+              backgroundColor: colors.primary + '20',
               alignItems: 'center',
               justifyContent: 'center',
-            }}
-          >
-            <Ionicons 
-              name={itemCount > 0 ? "pencil" : "add"} 
-              size={16} 
-              color={colors.primary} 
-            />
-          </Pressable>
+              marginRight: 12,
+            }}>
+              <Ionicons name={MEAL_TYPE_ICONS[mealType]} size={18} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={{ 
+                fontSize: 15, 
+                fontWeight: '600', 
+                color: colors.text,
+              }}>
+                {MEAL_TYPE_LABELS[mealType]}
+              </Text>
+              {totalCalories > 0 && (
+                <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
+                  {Math.round(totalCalories)} kcal
+                </Text>
+              )}
+            </View>
+          </View>
+          
+          {/* Action buttons */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {/* Photo button */}
+            <Pressable
+              onPress={() => handlePickImage(mealType)}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                backgroundColor: colors.background,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Ionicons name="camera-outline" size={16} color={colors.textSecondary} />
+            </Pressable>
+            
+            {/* Add item button */}
+            <Pressable
+              onPress={() => handleEditMeal(mealType)}
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                backgroundColor: colors.primary,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Ionicons name="add" size={18} color="#FFFFFF" />
+            </Pressable>
+          </View>
         </View>
+        
+        {/* Dropdown toggle */}
+        <Pressable
+          onPress={() => toggleMealExpanded(mealType)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: 12,
+            paddingVertical: 10,
+            backgroundColor: isExpanded ? colors.card : colors.cardElevated + '80',
+          }}
+        >
+          <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+            {itemCount === 0 ? 'Sin elementos' : `${itemCount} elemento${itemCount !== 1 ? 's' : ''}`}
+          </Text>
+          <Ionicons 
+            name={isExpanded ? "chevron-up" : "chevron-down"} 
+            size={18} 
+            color={colors.textMuted} 
+          />
+        </Pressable>
+        
+        {/* Expanded items list */}
+        {isExpanded && itemCount > 0 && (
+          <View style={{ backgroundColor: colors.card }}>
+            {meal!.items.map((item, index) => (
+              <Pressable
+                key={item.id}
+                onPress={() => handleEditItem(item)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  padding: 14,
+                  borderTopWidth: index > 0 ? 1 : 0,
+                  borderTopColor: colors.border,
+                }}
+              >
+                {/* FODMAP indicator */}
+                <View style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: 4,
+                  backgroundColor: getFodmapColor(item.fodmap_level),
+                  marginRight: 12,
+                }} />
+                
+                {/* Item info */}
+                <View style={{ flex: 1 }}>
+                  <Text style={{ 
+                    fontSize: 14, 
+                    fontWeight: '500', 
+                    color: colors.text,
+                  }}>
+                    {item.name}
+                  </Text>
+                  {item.food_id && (
+                    <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>
+                      {item.quantity} {item.unit}
+                    </Text>
+                  )}
+                </View>
+                
+                {/* Calories and arrow */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  {item.calories && item.calories > 0 && (
+                    <Text style={{ fontSize: 13, color: colors.textSecondary, fontWeight: '500' }}>
+                      {Math.round(item.calories)} kcal
+                    </Text>
+                  )}
+                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        )}
       </View>
     );
   };
@@ -969,6 +1181,33 @@ export default function LogScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Meal Item Editor Modal */}
+      <Modal
+        visible={showMealItemEditor}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowMealItemEditor(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ 
+            backgroundColor: colors.card, 
+            borderTopLeftRadius: 24, 
+            borderTopRightRadius: 24,
+            maxHeight: '85%',
+          }}>
+            {editingMealItem && (
+              <MealItemEditor 
+                colors={colors}
+                item={editingMealItem}
+                mealTypes={MEAL_TYPES_ORDER}
+                onClose={() => { setShowMealItemEditor(false); setEditingMealItem(null); }}
+                onSuccess={() => { setShowMealItemEditor(false); setEditingMealItem(null); loadDayDetails(); }}
+              />
+            )}
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -1325,6 +1564,370 @@ function MealEditor({ colors, selectedDate, mealType, existingMeal, onClose, onS
         </View>
       </ScrollView>
     </>
+  );
+}
+
+// ============================================================
+// MEAL ITEM EDITOR COMPONENT
+// ============================================================
+
+interface MealItemEditorProps {
+  colors: any;
+  item: MealItem;
+  mealTypes: MealType[];
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+function MealItemEditor({ colors, item, mealTypes, onClose, onSuccess }: MealItemEditorProps) {
+  const [quantity, setQuantity] = useState(item.quantity?.toString() || '1');
+  const [unit, setUnit] = useState(item.unit || 'porción');
+  const [targetMealType, setTargetMealType] = useState<MealType | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [showNutrition, setShowNutrition] = useState(false);
+
+  const UNITS = ['g', 'ml', 'porción', 'unidad', 'taza', 'cucharada', 'cucharadita', 'pieza'];
+
+  const getFodmapColor = (level: string | undefined) => {
+    switch (level) {
+      case 'low': return colors.fodmapLow;
+      case 'medium': return colors.fodmapMedium;
+      case 'high': return colors.fodmapHigh;
+      default: return colors.textMuted;
+    }
+  };
+
+  const getFodmapLabel = (level: string | undefined) => {
+    switch (level) {
+      case 'low': return 'Bajo';
+      case 'medium': return 'Medio';
+      case 'high': return 'Alto';
+      default: return 'Desconocido';
+    }
+  };
+
+  const handleSave = async () => {
+    setLoading(true);
+    try {
+      const db = await getDatabase();
+      const qty = parseFloat(quantity) || 1;
+      
+      // Update quantity and unit
+      await db.runAsync(
+        'UPDATE meal_items SET quantity = ?, unit = ? WHERE id = ?',
+        [qty, unit, item.id]
+      );
+
+      // Move to different meal type if selected
+      if (targetMealType) {
+        // Get target meal for this date
+        const targetMeal = await db.getFirstAsync(
+          'SELECT id FROM meals WHERE date = (SELECT date FROM meals WHERE id = (SELECT meal_id FROM meal_items WHERE id = ?)) AND meal_type = ?',
+          [item.id, targetMealType]
+        ) as { id: number } | null;
+
+        if (targetMeal) {
+          await db.runAsync(
+            'UPDATE meal_items SET meal_id = ? WHERE id = ?',
+            [targetMeal.id, item.id]
+          );
+        } else {
+          // Create new meal for target type
+          const now = new Date();
+          const mealDate = await db.getFirstAsync(
+            'SELECT date FROM meals WHERE id = ?',
+            [item.meal_id]
+          ) as { date: string } | null;
+          
+          if (mealDate) {
+            const result = await db.runAsync(
+              'INSERT INTO meals (name, meal_type, date, time) VALUES (?, ?, ?, ?)',
+              [MEAL_TYPE_LABELS[targetMealType], targetMealType, mealDate.date, now.toTimeString().slice(0, 5)]
+            );
+            await db.runAsync(
+              'UPDATE meal_items SET meal_id = ? WHERE id = ?',
+              [result.lastInsertRowId, item.id]
+            );
+          }
+        }
+      }
+
+      Alert.alert('¡Guardado!', 'Elemento actualizado');
+      onSuccess();
+    } catch (error) {
+      console.error('Error updating item:', error);
+      Alert.alert('Error', 'No se pudo actualizar el elemento');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = () => {
+    Alert.alert(
+      'Eliminar elemento',
+      `¿Estás seguro de que quieres eliminar "${item.name}"?`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        { 
+          text: 'Eliminar', 
+          style: 'destructive',
+          onPress: async () => {
+            setLoading(true);
+            try {
+              await deleteRow('meal_items', item.id);
+              Alert.alert('Eliminado', 'Elemento eliminado');
+              onSuccess();
+            } catch (error) {
+              console.error('Error deleting item:', error);
+              Alert.alert('Error', 'No se pudo eliminar');
+            } finally {
+              setLoading(false);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  return (
+    <>
+      {/* Header */}
+      <View style={{ 
+        flexDirection: 'row', 
+        justifyContent: 'space-between', 
+        alignItems: 'center',
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: colors.border,
+      }}>
+        <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
+          Editar elemento
+        </Text>
+        <Pressable onPress={onClose}>
+          <Ionicons name="close" size={24} color={colors.text} />
+        </Pressable>
+      </View>
+
+      <ScrollView style={{ padding: 16 }} showsVerticalScrollIndicator={false}>
+        <View style={{ gap: 16, paddingBottom: 32 }}>
+          {/* Item Info Card */}
+          <View style={{
+            backgroundColor: getFodmapColor(item.fodmap_level) + '15',
+            borderRadius: 16,
+            padding: 16,
+            borderWidth: 1,
+            borderColor: getFodmapColor(item.fodmap_level) + '30',
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+              <Ionicons 
+                name={item.recipe_id ? 'book' : 'nutrition'} 
+                size={20} 
+                color={getFodmapColor(item.fodmap_level)} 
+              />
+              <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text, marginLeft: 10, flex: 1 }}>
+                {item.name}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <View style={{
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                borderRadius: 12,
+                backgroundColor: getFodmapColor(item.fodmap_level),
+              }}>
+                <Text style={{ fontSize: 12, fontWeight: '600', color: '#FFFFFF' }}>
+                  FODMAP: {getFodmapLabel(item.fodmap_level)}
+                </Text>
+              </View>
+              {item.calories && item.calories > 0 && (
+                <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+                  {Math.round(item.calories)} kcal
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {/* Quantity */}
+          <View>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+              Cantidad
+            </Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <TextInput
+                value={quantity}
+                onChangeText={setQuantity}
+                placeholder="1"
+                placeholderTextColor={colors.textMuted}
+                keyboardType="decimal-pad"
+                style={{
+                  flex: 1,
+                  fontSize: 20,
+                  fontWeight: '700',
+                  color: colors.text,
+                  padding: 14,
+                  backgroundColor: colors.cardElevated,
+                  borderRadius: 12,
+                  textAlign: 'center',
+                }}
+              />
+            </View>
+          </View>
+
+          {/* Unit Selection */}
+          <View>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+              Unidad de medida
+            </Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {UNITS.map((u) => (
+                  <Pressable
+                    key={u}
+                    onPress={() => setUnit(u)}
+                    style={{
+                      paddingHorizontal: 16,
+                      paddingVertical: 10,
+                      borderRadius: 20,
+                      backgroundColor: unit === u ? colors.primary : colors.cardElevated,
+                    }}
+                  >
+                    <Text style={{ 
+                      fontSize: 13, 
+                      fontWeight: '600', 
+                      color: unit === u ? '#FFFFFF' : colors.textSecondary 
+                    }}>
+                      {u}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </ScrollView>
+          </View>
+
+          {/* Move to different meal type */}
+          <View>
+            <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+              Mover a otro tipo de comida
+            </Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+              {mealTypes.map((mt) => (
+                <Pressable
+                  key={mt}
+                  onPress={() => setTargetMealType(targetMealType === mt ? null : mt)}
+                  style={{
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    borderRadius: 12,
+                    backgroundColor: targetMealType === mt ? colors.warning : colors.cardElevated,
+                    borderWidth: 1,
+                    borderColor: targetMealType === mt ? colors.warning : 'transparent',
+                  }}
+                >
+                  <Text style={{ 
+                    fontSize: 13, 
+                    fontWeight: '500', 
+                    color: targetMealType === mt ? '#FFFFFF' : colors.textSecondary 
+                  }}>
+                    {MEAL_TYPE_LABELS[mt]}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </View>
+
+          {/* Nutrition Info Toggle */}
+          {item.nutrition && (
+            <View>
+              <Pressable
+                onPress={() => setShowNutrition(!showNutrition)}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: 14,
+                  backgroundColor: colors.cardElevated,
+                  borderRadius: 12,
+                }}
+              >
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <Ionicons name="nutrition" size={18} color={colors.primary} />
+                  <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>
+                    Información nutricional
+                  </Text>
+                </View>
+                <Ionicons 
+                  name={showNutrition ? 'chevron-up' : 'chevron-down'} 
+                  size={18} 
+                  color={colors.textMuted} 
+                />
+              </Pressable>
+              
+              {showNutrition && (
+                <View style={{
+                  marginTop: 8,
+                  padding: 14,
+                  backgroundColor: colors.cardElevated,
+                  borderRadius: 12,
+                }}>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+                    {item.nutrition.calories !== undefined && (
+                      <NutritionBadge label="Calorías" value={`${item.nutrition.calories} kcal`} colors={colors} />
+                    )}
+                    {item.nutrition.protein_g !== undefined && (
+                      <NutritionBadge label="Proteínas" value={`${item.nutrition.protein_g}g`} colors={colors} />
+                    )}
+                    {item.nutrition.carbs_g !== undefined && (
+                      <NutritionBadge label="Carbos" value={`${item.nutrition.carbs_g}g`} colors={colors} />
+                    )}
+                    {item.nutrition.fat_g !== undefined && (
+                      <NutritionBadge label="Grasas" value={`${item.nutrition.fat_g}g`} colors={colors} />
+                    )}
+                    {item.nutrition.fiber_g !== undefined && (
+                      <NutritionBadge label="Fibra" value={`${item.nutrition.fiber_g}g`} colors={colors} />
+                    )}
+                    {item.nutrition.sugars_g !== undefined && (
+                      <NutritionBadge label="Azúcares" value={`${item.nutrition.sugars_g}g`} colors={colors} />
+                    )}
+                  </View>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* Action Buttons */}
+          <View style={{ gap: 12, marginTop: 8 }}>
+            <Button onPress={handleSave} loading={loading} fullWidth size="lg">
+              Guardar cambios
+            </Button>
+            
+            <Pressable
+              onPress={handleDelete}
+              disabled={loading}
+              style={{
+                paddingVertical: 14,
+                borderRadius: 14,
+                alignItems: 'center',
+                backgroundColor: colors.fodmapHigh + '15',
+              }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '600', color: colors.fodmapHigh }}>
+                Eliminar elemento
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </ScrollView>
+    </>
+  );
+}
+
+// Nutrition Badge Component
+function NutritionBadge({ label, value, colors }: { label: string; value: string; colors: any }) {
+  return (
+    <View style={{ minWidth: 80 }}>
+      <Text style={{ fontSize: 10, color: colors.textMuted, marginBottom: 2 }}>{label}</Text>
+      <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>{value}</Text>
+    </View>
   );
 }
 
