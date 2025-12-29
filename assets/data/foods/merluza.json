@@ -1,0 +1,30 @@
+{
+  "id": "merluza",
+  "name": "Merluza",
+  "category": "protein",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 82,
+    "protein_g": 17.9,
+    "carbs_g": 0,
+    "fat_g": 0.9,
+    "saturated_fat_g": 0.2,
+    "cholesterol_mg": 67,
+    "sodium_mg": 80,
+    "potassium_mg": 320,
+    "calcium_mg": 25,
+    "iron_mg": 0.3,
+    "phosphorus_mg": 240
+  }
+}
+

@@ -12,6 +12,19 @@
     "mannitol": "low",
     "overall": "low"
   },
-  "serving_size": "250ml"
+  "serving_size": "250ml",
+  "nutrition": {
+    "calories": 42,
+    "protein_g": 3.4,
+    "carbs_g": 5,
+    "sugars_g": 5,
+    "fat_g": 1,
+    "saturated_fat_g": 0.6,
+    "sodium_mg": 44,
+    "potassium_mg": 150,
+    "calcium_mg": 120,
+    "vitamin_d_mcg": 1,
+    "vitamin_b12_mcg": 0.5
+  }
 }
 

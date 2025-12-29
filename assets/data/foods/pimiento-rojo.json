@@ -13,6 +13,27 @@
     "overall": "low",
     "safe_serving": "75g"
   },
-  "serving_size": "75g (½ pimiento)"
+  "serving_size": "75g (½ pimiento)",
+  "nutrition": {
+    "calories": 31,
+    "protein_g": 1,
+    "carbs_g": 7,
+    "fiber_g": 2.5,
+    "sugars_g": 5,
+    "fat_g": 0.3,
+    "sodium_mg": 4,
+    "potassium_mg": 211,
+    "calcium_mg": 7,
+    "iron_mg": 0.43,
+    "magnesium_mg": 12,
+    "phosphorus_mg": 26,
+    "zinc_mg": 0.25,
+    "vitamin_a_mcg": 157,
+    "vitamin_c_mg": 142,
+    "vitamin_e_mg": 1.58,
+    "vitamin_b6_mg": 0.291,
+    "vitamin_b9_mcg": 46,
+    "manganese_mg": 0.112
+  }
 }
 

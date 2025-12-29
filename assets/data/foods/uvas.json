@@ -1,0 +1,30 @@
+{
+  "id": "uvas",
+  "name": "Uvas",
+  "category": "fruit",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "medium",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low",
+    "safe_serving": "75g (6 uvas)"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 69,
+    "protein_g": 0.7,
+    "carbs_g": 18.1,
+    "fat_g": 0.2,
+    "fiber_g": 0.9,
+    "sugars_g": 15.5,
+    "sodium_mg": 2,
+    "potassium_mg": 191,
+    "calcium_mg": 10,
+    "iron_mg": 0.4
+  }
+}
+

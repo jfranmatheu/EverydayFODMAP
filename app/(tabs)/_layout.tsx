@@ -1,8 +1,8 @@
 import { useTheme } from '@/contexts/ThemeContext';
 import { Ionicons } from '@expo/vector-icons';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter } from 'expo-router';
 import React from 'react';
-import { Platform } from 'react-native';
+import { Platform, Pressable } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -40,6 +40,7 @@ function TabIcon({ name, color, focused }: TabIconProps) {
 
 export default function TabLayout() {
   const { colors, isDark } = useTheme();
+  const router = useRouter();
 
   return (
     <Tabs
@@ -81,6 +82,17 @@ export default function TabLayout() {
         options={{
           title: 'Inicio',
           headerTitle: 'Everyday FODMAP',
+          headerRight: () => (
+            <Pressable
+              onPress={() => router.push('/settings')}
+              style={{
+                marginRight: 16,
+                padding: 8,
+              }}
+            >
+              <Ionicons name="settings-outline" size={22} color={colors.text} />
+            </Pressable>
+          ),
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name={focused ? 'home' : 'home-outline'} color={color} focused={focused} />
           ),

@@ -13,6 +13,27 @@
     "overall": "low",
     "safe_serving": "75g"
   },
-  "serving_size": "75g"
+  "serving_size": "75g",
+  "nutrition": {
+    "calories": 23,
+    "protein_g": 2.9,
+    "carbs_g": 3.6,
+    "fiber_g": 2.2,
+    "sugars_g": 0.4,
+    "fat_g": 0.4,
+    "sodium_mg": 79,
+    "potassium_mg": 558,
+    "calcium_mg": 99,
+    "iron_mg": 2.7,
+    "magnesium_mg": 79,
+    "phosphorus_mg": 49,
+    "zinc_mg": 0.53,
+    "vitamin_a_mcg": 9377,
+    "vitamin_c_mg": 28.1,
+    "vitamin_e_mg": 2.03,
+    "vitamin_k_mcg": 482.9,
+    "vitamin_b9_mcg": 194,
+    "manganese_mg": 0.897
+  }
 }
 

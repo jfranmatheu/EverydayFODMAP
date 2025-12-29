@@ -1,0 +1,31 @@
+{
+  "id": "pina",
+  "name": "Piña",
+  "category": "fruit",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low",
+    "safe_serving": "140g (1 taza)"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 50,
+    "protein_g": 0.5,
+    "carbs_g": 13.1,
+    "fat_g": 0.1,
+    "fiber_g": 1.4,
+    "sugars_g": 9.9,
+    "sodium_mg": 1,
+    "potassium_mg": 109,
+    "calcium_mg": 13,
+    "iron_mg": 0.3,
+    "vitamin_c_mg": 47.8
+  }
+}
+

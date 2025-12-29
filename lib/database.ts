@@ -688,10 +688,23 @@ export async function getDatabase(): Promise<any> {
 
 // Load internal data for web mock
 async function loadInternalDataWeb(): Promise<void> {
-  // Check if already loaded
-  if (webStorage['foods'] && webStorage['foods'].some((f: any) => f.source === 'internal')) {
-    console.log('[WebDB] Internal data already loaded');
+  // Check if already loaded and has the same count AND has nutrition data
+  const existingInternalFoods = webStorage['foods']?.filter((f: any) => f.source === 'internal') || [];
+  
+  // Check if any internal food is missing nutrition data (needs refresh)
+  const needsRefresh = existingInternalFoods.length < INTERNAL_FOODS.length || 
+    existingInternalFoods.some((f: any) => !f.nutrition);
+  
+  if (!needsRefresh) {
+    console.log('[WebDB] Internal data already loaded with nutrition');
     return;
+  }
+  
+  console.log('[WebDB] Refreshing internal foods (count or nutrition missing)');
+  
+  // Remove old internal foods to reload with updated data
+  if (webStorage['foods']) {
+    webStorage['foods'] = webStorage['foods'].filter((f: any) => f.source !== 'internal');
   }
 
   // Load foods

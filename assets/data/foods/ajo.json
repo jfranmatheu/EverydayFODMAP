@@ -14,6 +14,25 @@
     "overall": "high"
   },
   "serving_size": "1 diente",
-  "notes": "El aceite de ajo infusionado es bajo en FODMAP"
+  "notes": "El aceite de ajo infusionado es bajo en FODMAP",
+  "nutrition": {
+    "calories": 149,
+    "protein_g": 6.36,
+    "carbs_g": 33.06,
+    "fiber_g": 2.1,
+    "sugars_g": 1,
+    "fat_g": 0.5,
+    "sodium_mg": 17,
+    "potassium_mg": 401,
+    "calcium_mg": 181,
+    "iron_mg": 1.7,
+    "magnesium_mg": 25,
+    "phosphorus_mg": 153,
+    "zinc_mg": 1.16,
+    "vitamin_c_mg": 31.2,
+    "vitamin_b1_mg": 0.2,
+    "vitamin_b6_mg": 1.235,
+    "manganese_mg": 1.672
+  }
 }
 

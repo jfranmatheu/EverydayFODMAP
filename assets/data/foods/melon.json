@@ -1,0 +1,31 @@
+{
+  "id": "melon",
+  "name": "Melón",
+  "category": "fruit",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low",
+    "safe_serving": "120g (3/4 taza)"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 34,
+    "protein_g": 0.8,
+    "carbs_g": 8.2,
+    "fat_g": 0.2,
+    "fiber_g": 0.9,
+    "sugars_g": 7.9,
+    "sodium_mg": 16,
+    "potassium_mg": 267,
+    "calcium_mg": 9,
+    "iron_mg": 0.2,
+    "vitamin_c_mg": 36.7
+  }
+}
+

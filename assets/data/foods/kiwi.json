@@ -1,0 +1,31 @@
+{
+  "id": "kiwi",
+  "name": "Kiwi",
+  "category": "fruit",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low",
+    "safe_serving": "150g (2 kiwis)"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 61,
+    "protein_g": 1.1,
+    "carbs_g": 14.7,
+    "fat_g": 0.5,
+    "fiber_g": 3,
+    "sugars_g": 9,
+    "sodium_mg": 3,
+    "potassium_mg": 312,
+    "calcium_mg": 34,
+    "iron_mg": 0.3,
+    "vitamin_c_mg": 92.7
+  }
+}
+

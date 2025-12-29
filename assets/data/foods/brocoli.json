@@ -1,0 +1,32 @@
+{
+  "id": "brocoli",
+  "name": "Brócoli",
+  "category": "vegetable",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "medium",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low",
+    "safe_serving": "75g (cabeza)",
+    "limit_serving": "150g"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 34,
+    "protein_g": 2.8,
+    "carbs_g": 6.6,
+    "fat_g": 0.4,
+    "fiber_g": 2.6,
+    "sugars_g": 1.7,
+    "sodium_mg": 33,
+    "potassium_mg": 316,
+    "calcium_mg": 47,
+    "iron_mg": 0.7,
+    "vitamin_c_mg": 89.2
+  }
+}
+

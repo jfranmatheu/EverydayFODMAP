@@ -85,16 +85,44 @@ export interface NutritionInfo {
   carbs_g?: number;
   fat_g?: number;
   saturated_fat_g?: number;
+  monounsaturated_fat_g?: number;
+  polyunsaturated_fat_g?: number;
+  trans_fat_g?: number;
   fiber_g?: number;
   sugars_g?: number;
+  added_sugars_g?: number;
+  cholesterol_mg?: number;
   
   // Micros (optional)
   sodium_mg?: number;
   potassium_mg?: number;
   calcium_mg?: number;
   iron_mg?: number;
+  magnesium_mg?: number;
+  phosphorus_mg?: number;
+  zinc_mg?: number;
+  copper_mg?: number;
+  manganese_mg?: number;
+  selenium_mcg?: number;
+  
+  // Vitamins (optional)
+  vitamin_a_mcg?: number;
+  vitamin_b1_mg?: number; // Thiamine
+  vitamin_b2_mg?: number; // Riboflavin
+  vitamin_b3_mg?: number; // Niacin
+  vitamin_b5_mg?: number; // Pantothenic acid
+  vitamin_b6_mg?: number;
+  vitamin_b9_mcg?: number; // Folate
+  vitamin_b12_mcg?: number;
   vitamin_c_mg?: number;
   vitamin_d_mcg?: number;
+  vitamin_e_mg?: number;
+  vitamin_k_mcg?: number;
+  
+  // Other
+  water_g?: number;
+  alcohol_g?: number;
+  caffeine_mg?: number;
 }
 
 // Nutri-Score (A-E rating used in Europe)

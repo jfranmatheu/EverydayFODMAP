@@ -13,6 +13,22 @@
     "mannitol": "low",
     "overall": "high"
   },
-  "serving_size": "Evitar o muy pequeña cantidad"
+  "serving_size": "Evitar o muy pequeña cantidad",
+  "nutrition": {
+    "calories": 52,
+    "protein_g": 0.26,
+    "carbs_g": 13.81,
+    "fiber_g": 2.4,
+    "sugars_g": 10.39,
+    "fat_g": 0.17,
+    "sodium_mg": 1,
+    "potassium_mg": 107,
+    "calcium_mg": 6,
+    "iron_mg": 0.12,
+    "magnesium_mg": 5,
+    "phosphorus_mg": 11,
+    "vitamin_c_mg": 4.6,
+    "vitamin_k_mcg": 2.2
+  }
 }
 

@@ -17,7 +17,22 @@
     "calories": 155,
     "protein_g": 13,
     "fat_g": 11,
-    "carbs_g": 1
+    "saturated_fat_g": 3.3,
+    "cholesterol_mg": 372,
+    "carbs_g": 1.1,
+    "sodium_mg": 124,
+    "potassium_mg": 138,
+    "calcium_mg": 56,
+    "iron_mg": 1.75,
+    "magnesium_mg": 12,
+    "phosphorus_mg": 198,
+    "zinc_mg": 1.29,
+    "selenium_mcg": 30.7,
+    "vitamin_a_mcg": 160,
+    "vitamin_d_mcg": 1.1,
+    "vitamin_b2_mg": 0.457,
+    "vitamin_b12_mcg": 0.89,
+    "vitamin_b9_mcg": 44
   }
 }
 

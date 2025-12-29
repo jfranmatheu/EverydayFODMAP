@@ -1,0 +1,30 @@
+{
+  "id": "gambas",
+  "name": "Gambas",
+  "category": "protein",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 99,
+    "protein_g": 20.9,
+    "carbs_g": 0.2,
+    "fat_g": 1.7,
+    "saturated_fat_g": 0.3,
+    "cholesterol_mg": 152,
+    "sodium_mg": 111,
+    "potassium_mg": 220,
+    "calcium_mg": 52,
+    "iron_mg": 2.4,
+    "zinc_mg": 1.1
+  }
+}
+

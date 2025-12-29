@@ -567,12 +567,15 @@ const MEAL_TYPE_ICONS = {
 
 ### Home Screen (`app/(tabs)/index.tsx`)
 
-- **Profile Card**: User info with BMI visualization and scale
-  - Editable profile with nutritional targets (kcal, macros %)
-- **Daily Nutrition Card**: 
+- **Header**: Title "Inicio" with settings icon
+- **Profile Card**: User info with BMI visualization
+  - Weight timeline showing last 4-5 weight records
+  - Editable profile modal for personal info
+- **Daily Nutrition Card** ("Balance del día"): 
   - Gamified calorie counter with progress bar
   - Macro nutrients (protein, carbs, fat) with individual progress
   - Target vs consumed comparison
+  - Edit button for nutritional targets (kcal, macros %)
 - **Today's Treatments Card** (Gamified):
   - Progress ring showing doses taken/total
   - List of individual doses with time and dosage
@@ -607,6 +610,15 @@ const MEAL_TYPE_ICONS = {
   - Item list with pencil edit icon (was arrow)
   - Quantity modal when adding new items (quantity + unit selector)
 - **Meal Item Editor**: Edit quantity, unit, move to another meal type, view nutrition, delete
+
+### Food Detail Screen (`app/food/[id].tsx`)
+
+- **Section Tabs**: Three-tab navigation for food details
+  1. **Nutrición (Nutrition)**: Name, category, brand, serving size, compound food toggle, nutritional info (required and optional fields), Nutri-Score
+  2. **FODMAP**: Overall FODMAP level, detailed categories (Monash), safe/limit serving sizes
+  3. **Extras**: Photo upload, notes
+- **Compound Foods**: Add ingredients with individual FODMAP levels
+- **Read-only Mode**: For internal (built-in) foods from database
 
 ### Database Helper (`lib/database.ts`)
 
@@ -722,4 +734,13 @@ Private project - All rights reserved.
 
 ---
 
-*Last updated: 29 December 2024 - v2*
+*Last updated: 29 December 2024 - v3*
+
+### Recent Changes (v3)
+
+- Reorganized food detail screen tabs: Nutrición → FODMAP → Extras
+- Added weight timeline to Profile Card
+- Moved settings icon to header
+- Moved nutritional targets editor to Daily Nutrition Card
+- Removed greeting message from home page
+- Cleaned up duplicate code in food screen

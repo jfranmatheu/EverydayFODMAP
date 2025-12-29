@@ -1,0 +1,31 @@
+{
+  "id": "pepino",
+  "name": "Pepino",
+  "category": "vegetable",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low",
+    "safe_serving": "75g (1/2 pepino)"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 15,
+    "protein_g": 0.7,
+    "carbs_g": 3.6,
+    "fat_g": 0.1,
+    "fiber_g": 0.5,
+    "sugars_g": 1.7,
+    "sodium_mg": 2,
+    "potassium_mg": 147,
+    "calcium_mg": 16,
+    "iron_mg": 0.3,
+    "vitamin_c_mg": 2.8
+  }
+}
+

@@ -12,6 +12,24 @@
     "mannitol": "low",
     "overall": "low"
   },
-  "serving_size": "190g (cocido)"
+  "serving_size": "190g (cocido)",
+  "nutrition": {
+    "calories": 130,
+    "protein_g": 2.7,
+    "carbs_g": 28,
+    "fiber_g": 0.4,
+    "fat_g": 0.3,
+    "sodium_mg": 1,
+    "potassium_mg": 35,
+    "calcium_mg": 28,
+    "iron_mg": 0.8,
+    "magnesium_mg": 12,
+    "phosphorus_mg": 43,
+    "zinc_mg": 0.49,
+    "vitamin_b1_mg": 0.163,
+    "vitamin_b3_mg": 1.476,
+    "vitamin_b6_mg": 0.093,
+    "manganese_mg": 0.472
+  }
 }
 

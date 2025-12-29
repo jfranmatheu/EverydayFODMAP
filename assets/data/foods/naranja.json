@@ -1,0 +1,31 @@
+{
+  "id": "naranja",
+  "name": "Naranja",
+  "category": "fruit",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low",
+    "safe_serving": "130g (1 naranja mediana)"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 47,
+    "protein_g": 0.9,
+    "carbs_g": 11.8,
+    "fat_g": 0.1,
+    "fiber_g": 2.4,
+    "sugars_g": 9.4,
+    "sodium_mg": 0,
+    "potassium_mg": 181,
+    "calcium_mg": 40,
+    "iron_mg": 0.1,
+    "vitamin_c_mg": 53.2
+  }
+}
+

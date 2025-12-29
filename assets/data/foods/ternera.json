@@ -1,0 +1,31 @@
+{
+  "id": "ternera",
+  "name": "Ternera (solomillo)",
+  "category": "protein",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 250,
+    "protein_g": 26,
+    "carbs_g": 0,
+    "fat_g": 15,
+    "saturated_fat_g": 6,
+    "cholesterol_mg": 90,
+    "sodium_mg": 54,
+    "potassium_mg": 318,
+    "calcium_mg": 12,
+    "iron_mg": 2.6,
+    "zinc_mg": 4.5,
+    "vitamin_b12_mcg": 2.1
+  }
+}
+

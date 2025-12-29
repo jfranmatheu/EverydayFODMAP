@@ -1,0 +1,32 @@
+{
+  "id": "avena",
+  "name": "Avena",
+  "category": "grains",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low",
+    "safe_serving": "52g (1/2 taza)"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 389,
+    "protein_g": 16.9,
+    "carbs_g": 66.3,
+    "fat_g": 6.9,
+    "saturated_fat_g": 1.2,
+    "fiber_g": 10.6,
+    "sugars_g": 0,
+    "sodium_mg": 2,
+    "potassium_mg": 429,
+    "calcium_mg": 54,
+    "iron_mg": 4.7,
+    "magnesium_mg": 177
+  }
+}
+

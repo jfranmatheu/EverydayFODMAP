@@ -15,6 +15,27 @@
     "safe_serving": "65g (1 pequeño)",
     "limit_serving": "130g"
   },
-  "serving_size": "65g"
+  "serving_size": "65g",
+  "nutrition": {
+    "calories": 18,
+    "protein_g": 0.88,
+    "carbs_g": 3.89,
+    "fiber_g": 1.2,
+    "sugars_g": 2.63,
+    "fat_g": 0.2,
+    "sodium_mg": 5,
+    "potassium_mg": 237,
+    "calcium_mg": 10,
+    "iron_mg": 0.27,
+    "magnesium_mg": 11,
+    "phosphorus_mg": 24,
+    "zinc_mg": 0.17,
+    "vitamin_a_mcg": 833,
+    "vitamin_c_mg": 13.7,
+    "vitamin_e_mg": 0.54,
+    "vitamin_k_mcg": 7.9,
+    "vitamin_b9_mcg": 15,
+    "manganese_mg": 0.114
+  }
 }
 

@@ -1,0 +1,30 @@
+{
+  "id": "salmon",
+  "name": "Salmón",
+  "category": "protein",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 208,
+    "protein_g": 20.4,
+    "carbs_g": 0,
+    "fat_g": 13.4,
+    "saturated_fat_g": 3.1,
+    "cholesterol_mg": 55,
+    "sodium_mg": 59,
+    "potassium_mg": 363,
+    "calcium_mg": 12,
+    "iron_mg": 0.8,
+    "omega_3_mg": 2260
+  }
+}
+

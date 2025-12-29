@@ -1,0 +1,31 @@
+{
+  "id": "patata",
+  "name": "Patata",
+  "category": "carbs",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 77,
+    "protein_g": 2,
+    "carbs_g": 17,
+    "fat_g": 0.1,
+    "fiber_g": 2.2,
+    "sugars_g": 0.8,
+    "sodium_mg": 6,
+    "potassium_mg": 421,
+    "calcium_mg": 12,
+    "iron_mg": 0.8,
+    "vitamin_c_mg": 19.7,
+    "vitamin_b6_mg": 0.3
+  }
+}
+

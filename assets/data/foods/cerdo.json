@@ -1,0 +1,31 @@
+{
+  "id": "cerdo",
+  "name": "Cerdo (lomo)",
+  "category": "protein",
+  "fodmap_level": "low",
+  "fodmap_details": {
+    "fructans": "low",
+    "gos": "low",
+    "lactose": "low",
+    "fructose": "low",
+    "sorbitol": "low",
+    "mannitol": "low",
+    "overall": "low"
+  },
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 143,
+    "protein_g": 26.1,
+    "carbs_g": 0,
+    "fat_g": 3.5,
+    "saturated_fat_g": 1.2,
+    "cholesterol_mg": 65,
+    "sodium_mg": 48,
+    "potassium_mg": 423,
+    "calcium_mg": 5,
+    "iron_mg": 0.9,
+    "zinc_mg": 2.4,
+    "vitamin_b1_mg": 0.9
+  }
+}
+

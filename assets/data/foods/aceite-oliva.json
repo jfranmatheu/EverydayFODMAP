@@ -12,6 +12,15 @@
     "mannitol": "low",
     "overall": "low"
   },
-  "serving_size": "1 cucharada"
+  "serving_size": "1 cucharada",
+  "nutrition": {
+    "calories": 884,
+    "fat_g": 100,
+    "saturated_fat_g": 13.8,
+    "monounsaturated_fat_g": 73,
+    "polyunsaturated_fat_g": 10.5,
+    "vitamin_e_mg": 14.35,
+    "vitamin_k_mcg": 60.2
+  }
 }
 

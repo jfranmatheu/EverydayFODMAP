@@ -9,17 +9,34 @@
 import aceiteOliva from '@/assets/data/foods/aceite-oliva.json';
 import ajo from '@/assets/data/foods/ajo.json';
 import arrozBlanco from '@/assets/data/foods/arroz-blanco.json';
+import atun from '@/assets/data/foods/atun.json';
+import avena from '@/assets/data/foods/avena.json';
 import bebidaAlmendras from '@/assets/data/foods/bebida-almendras.json';
+import brocoli from '@/assets/data/foods/brocoli.json';
+import calabacin from '@/assets/data/foods/calabacin.json';
 import cebolla from '@/assets/data/foods/cebolla.json';
+import cerdo from '@/assets/data/foods/cerdo.json';
 import espinacas from '@/assets/data/foods/espinacas.json';
 import fresas from '@/assets/data/foods/fresas.json';
+import gambas from '@/assets/data/foods/gambas.json';
 import huevo from '@/assets/data/foods/huevo.json';
+import kiwi from '@/assets/data/foods/kiwi.json';
 import lecheSinLactosa from '@/assets/data/foods/leche-sin-lactosa.json';
+import lechuga from '@/assets/data/foods/lechuga.json';
 import manzana from '@/assets/data/foods/manzana.json';
+import melon from '@/assets/data/foods/melon.json';
+import merluza from '@/assets/data/foods/merluza.json';
+import naranja from '@/assets/data/foods/naranja.json';
+import patata from '@/assets/data/foods/patata.json';
+import pepino from '@/assets/data/foods/pepino.json';
 import pimientoRojo from '@/assets/data/foods/pimiento-rojo.json';
+import pina from '@/assets/data/foods/pina.json';
 import platanoVerde from '@/assets/data/foods/platano-verde.json';
 import pollo from '@/assets/data/foods/pollo.json';
+import salmon from '@/assets/data/foods/salmon.json';
+import ternera from '@/assets/data/foods/ternera.json';
 import tomate from '@/assets/data/foods/tomate.json';
+import uvas from '@/assets/data/foods/uvas.json';
 import zanahoria from '@/assets/data/foods/zanahoria.json';
 
 // Import all recipe JSON files
@@ -112,21 +129,46 @@ export interface InternalRecipeData {
 
 // Collected internal foods
 export const INTERNAL_FOODS: InternalFoodData[] = [
+  // Vegetables
   zanahoria,
   espinacas,
   pimientoRojo,
   tomate,
   ajo,
   cebolla,
-  arrozBlanco,
-  pollo,
-  huevo,
+  pepino,
+  lechuga,
+  brocoli,
+  calabacin,
+  // Fruits
   platanoVerde,
   fresas,
   manzana,
+  naranja,
+  kiwi,
+  uvas,
+  pina,
+  melon,
+  // Proteins - Meat
+  pollo,
+  ternera,
+  cerdo,
+  // Proteins - Fish
+  salmon,
+  atun,
+  merluza,
+  gambas,
+  // Other proteins
+  huevo,
+  // Carbs
+  arrozBlanco,
+  patata,
+  avena,
+  // Dairy alternatives
   lecheSinLactosa,
-  aceiteOliva,
   bebidaAlmendras,
+  // Fats
+  aceiteOliva,
 ] as InternalFoodData[];
 
 // Collected internal recipes

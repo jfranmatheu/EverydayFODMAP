@@ -13,6 +13,18 @@
     "overall": "low"
   },
   "serving_size": "250ml",
-  "notes": "Sin azúcares añadidos"
+  "notes": "Sin azúcares añadidos",
+  "nutrition": {
+    "calories": 17,
+    "protein_g": 0.6,
+    "carbs_g": 1.5,
+    "sugars_g": 0.2,
+    "fat_g": 1.1,
+    "saturated_fat_g": 0.1,
+    "sodium_mg": 63,
+    "calcium_mg": 188,
+    "vitamin_d_mcg": 1.25,
+    "vitamin_e_mg": 3.3
+  }
 }
 

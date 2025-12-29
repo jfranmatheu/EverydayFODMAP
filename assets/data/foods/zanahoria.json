@@ -16,10 +16,26 @@
   "serving_size": "75g (1 mediana)",
   "nutrition": {
     "calories": 31,
+    "protein_g": 0.7,
     "carbs_g": 7,
     "fiber_g": 2,
-    "protein_g": 0.7,
-    "fat_g": 0.2
+    "sugars_g": 4.7,
+    "fat_g": 0.2,
+    "sodium_mg": 69,
+    "potassium_mg": 320,
+    "calcium_mg": 33,
+    "iron_mg": 0.3,
+    "magnesium_mg": 12,
+    "phosphorus_mg": 35,
+    "zinc_mg": 0.24,
+    "vitamin_a_mcg": 16706,
+    "vitamin_c_mg": 5.9,
+    "vitamin_e_mg": 0.66,
+    "vitamin_k_mcg": 13.2,
+    "vitamin_b3_mg": 0.983,
+    "vitamin_b6_mg": 0.138,
+    "vitamin_b9_mcg": 19,
+    "manganese_mg": 0.143
   }
 }
 

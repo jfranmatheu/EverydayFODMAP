@@ -6,6 +6,7 @@ import {
   BMI_CATEGORIES,
   calculateAge,
   calculateBMI,
+  calculateDailyCalories,
   calculateMacroGrams,
   Gender,
   GENDER_LABELS,
@@ -25,6 +26,7 @@ import {
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Animated, {
@@ -51,15 +53,18 @@ export default function HomeScreen() {
   const { colors } = useTheme();
   const { isReady } = useDatabase();
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const isLargeScreen = width >= 768; // Tablet/Desktop threshold
   const [refreshing, setRefreshing] = useState(false);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
-  const [greeting, setGreeting] = useState('');
+  const [weightHistory, setWeightHistory] = useState<WeightLog[]>([]);
   
   // Profile state
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [latestWeight, setLatestWeight] = useState<WeightLog | null>(null);
   const [showEditProfileModal, setShowEditProfileModal] = useState(false);
   const [showAddWeightModal, setShowAddWeightModal] = useState(false);
+  const [showNutritionTargetsModal, setShowNutritionTargetsModal] = useState(false);
   
   // Stats
   const [activeTreatments, setActiveTreatments] = useState(0);
@@ -87,13 +92,11 @@ export default function HomeScreen() {
   // Add weight form
   const [newWeight, setNewWeight] = useState('');
   const [saving, setSaving] = useState(false);
+  
+  // Weight chart period
+  const [weightPeriod, setWeightPeriod] = useState<'all' | '2y' | '1y' | '6m' | '3m' | '1m'>('all');
 
-  useEffect(() => {
-    const hour = new Date().getHours();
-    if (hour < 12) setGreeting('Buenos días');
-    else if (hour < 19) setGreeting('Buenas tardes');
-    else setGreeting('Buenas noches');
-  }, []);
+  // Greeting removed - moved to header
 
   useEffect(() => {
     if (isReady) {
@@ -153,6 +156,14 @@ export default function HomeScreen() {
       
       console.log('[Home] Loaded weight:', weightData);
       setLatestWeight(weightData);
+      
+      // Load weight history (last 30 entries for timeline)
+      const historyData = await db.getAllAsync(
+        'SELECT * FROM weight_logs ORDER BY date DESC, time DESC LIMIT 30'
+      ) as WeightLog[];
+      
+      // Reverse to show oldest first for chart
+      setWeightHistory(historyData.reverse());
     } catch (error) {
       console.error('Error loading weight:', error);
     }
@@ -855,11 +866,13 @@ export default function HomeScreen() {
   const DailyNutritionCard = ({ 
     colors, 
     consumed, 
-    targets 
+    targets,
+    onEditTargets,
   }: { 
     colors: any; 
     consumed: { calories: number; protein: number; carbs: number; fat: number };
     targets: { calories: number; protein_pct: number; carbs_pct: number; fat_pct: number };
+    onEditTargets: () => void;
   }) => {
     const targetMacros = calculateMacroGrams(targets.calories, targets.protein_pct, targets.carbs_pct, targets.fat_pct);
     const calorieProgress = Math.min(consumed.calories / targets.calories, 1.5);
@@ -893,7 +906,7 @@ export default function HomeScreen() {
     const calorieColor = isOverCalories ? '#E91E63' : '#4CAF50';
     
     return (
-      <Card style={{ marginBottom: 16, padding: 0, overflow: 'hidden' }}>
+      <Card style={{ marginBottom: 16, padding: 0, overflow: 'hidden', flex: 1 }}>
         {/* Header */}
         <View style={{
           flexDirection: 'row',
@@ -919,16 +932,23 @@ export default function HomeScreen() {
               Balance del día
             </Text>
           </View>
-          <View style={{
-            backgroundColor: calorieColor + '15',
-            paddingHorizontal: 10,
-            paddingVertical: 4,
-            borderRadius: 12,
-          }}>
-            <Text style={{ fontSize: 12, fontWeight: '700', color: calorieColor }}>
-              {caloriePercent}%
+          <Pressable 
+            onPress={onEditTargets}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 4,
+              backgroundColor: colors.cardElevated,
+              paddingHorizontal: 10,
+              paddingVertical: 6,
+              borderRadius: 16,
+            }}
+          >
+            <Ionicons name="flag" size={14} color={colors.primary} />
+            <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary }}>
+              Objetivos
             </Text>
-          </View>
+          </Pressable>
         </View>
         
         {/* Calories Section */}
@@ -1651,57 +1671,19 @@ export default function HomeScreen() {
           />
         }
       >
-        {/* Header with Settings Button */}
-        <Animated.View 
-          entering={FadeInDown.delay(100).springify()}
-          style={{ 
-            flexDirection: 'row', 
-            justifyContent: 'space-between', 
-            alignItems: 'flex-start',
-            marginBottom: 20,
-          }}
-        >
-          <View>
-            <Text style={{ 
-              fontSize: 28, 
-              fontWeight: '700', 
-              color: colors.text,
-              marginBottom: 4,
-            }}>
-              {greeting} 👋
-            </Text>
-            <Text style={{ 
-              fontSize: 15, 
-              color: colors.textSecondary,
-            }}>
-              ¿Cómo te sientes hoy?
-            </Text>
-          </View>
-          
-          <Pressable
-            onPress={() => router.push('/settings')}
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 22,
-              backgroundColor: colors.card,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderWidth: 1,
-              borderColor: colors.border,
-            }}
-          >
-            <Ionicons name="settings-outline" size={22} color={colors.text} />
-          </Pressable>
-        </Animated.View>
 
-        {/* User Profile Card */}
-        <Animated.View entering={FadeInDown.delay(150).springify()}>
-          <Card style={{ 
-            padding: 0, 
-            overflow: 'hidden',
-            marginBottom: 16,
-          }}>
+        {/* Profile and Nutrition Row (Large Screens) */}
+        {isLargeScreen ? (
+          <View style={{ flexDirection: 'row', gap: 16, marginBottom: 16, alignItems: 'stretch' }}>
+            <View style={{ flex: 1, display: 'flex' }}>
+              {/* User Profile Card */}
+              <Animated.View entering={FadeInDown.delay(150).springify()} style={{ flex: 1 }}>
+                <Card style={{ 
+                  padding: 0, 
+                  overflow: 'hidden',
+                  marginBottom: 0,
+                  flex: 1,
+                }}>
             {/* Profile Header */}
             <View style={{
               flexDirection: 'row',
@@ -1934,6 +1916,248 @@ export default function HomeScreen() {
                     </Text>
                   </View>
                 )}
+
+                {/* Weight Timeline - Line Chart */}
+                {weightHistory.length > 1 && (
+                  <View style={{
+                    marginTop: 16,
+                    backgroundColor: colors.cardElevated,
+                    borderRadius: 12,
+                    padding: 14,
+                  }}>
+                    {/* Header with period selector */}
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                      <Ionicons name="trending-up" size={16} color={colors.primary} style={{ marginRight: 6 }} />
+                      <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
+                        Historial de peso
+                      </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 'auto', gap: 8 }}>
+                        <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                          {weightHistory.length} registros
+                        </Text>
+                        <Pressable
+                          onPress={() => {
+                            const periods: typeof weightPeriod[] = ['all', '2y', '1y', '6m', '3m', '1m'];
+                            const currentIndex = periods.indexOf(weightPeriod);
+                            const nextIndex = (currentIndex + 1) % periods.length;
+                            setWeightPeriod(periods[nextIndex]);
+                          }}
+                          style={{
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                            backgroundColor: colors.primary + '20',
+                            borderRadius: 6,
+                          }}
+                        >
+                          <Text style={{ fontSize: 10, fontWeight: '600', color: colors.primary }}>
+                            {weightPeriod === 'all' ? 'Todo' : 
+                             weightPeriod === '2y' ? '2 años' :
+                             weightPeriod === '1y' ? '1 año' :
+                             weightPeriod === '6m' ? '6 meses' :
+                             weightPeriod === '3m' ? '3 meses' : '1 mes'}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                    
+                    {/* Line Chart */}
+                    <View style={{ height: 80 }}>
+                      {(() => {
+                        // Filter by period
+                        const now = new Date();
+                        const filteredHistory = weightHistory.filter(w => {
+                          if (weightPeriod === 'all') return true;
+                          const entryDate = new Date(w.date);
+                          const monthsAgo = (now.getFullYear() - entryDate.getFullYear()) * 12 + now.getMonth() - entryDate.getMonth();
+                          if (weightPeriod === '2y') return monthsAgo <= 24;
+                          if (weightPeriod === '1y') return monthsAgo <= 12;
+                          if (weightPeriod === '6m') return monthsAgo <= 6;
+                          if (weightPeriod === '3m') return monthsAgo <= 3;
+                          if (weightPeriod === '1m') return monthsAgo <= 1;
+                          return true;
+                        });
+                        
+                        if (filteredHistory.length < 2) {
+                          return (
+                            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+                              <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                                No hay suficientes datos para este periodo
+                              </Text>
+                            </View>
+                          );
+                        }
+                        
+                        const weights = filteredHistory.map(w => w.weight_kg);
+                        const minW = Math.min(...weights) - 0.5;
+                        const maxW = Math.max(...weights) + 0.5;
+                        const range = maxW - minW || 1;
+                        const displayHistory = filteredHistory.slice(-20); // Max 20 points for readability
+                        
+                        // Calculate points for line
+                        const chartWidth = 100; // percentage
+                        const chartHeight = 60;
+                        const points = displayHistory.map((entry, index) => {
+                          const x = displayHistory.length > 1 
+                            ? (index / (displayHistory.length - 1)) * chartWidth 
+                            : 50;
+                          const y = chartHeight - ((entry.weight_kg - minW) / range) * chartHeight;
+                          return { x, y, entry };
+                        });
+                        
+                        // Create SVG-like path for line chart using View
+                        return (
+                          <View style={{ flex: 1, position: 'relative' }}>
+                            {/* Y-axis labels */}
+                            <View style={{ 
+                              position: 'absolute', 
+                              left: 0, 
+                              top: 0, 
+                              bottom: 20,
+                              width: 35,
+                              justifyContent: 'space-between',
+                            }}>
+                              <Text style={{ fontSize: 9, color: colors.textMuted }}>{maxW.toFixed(1)}</Text>
+                              <Text style={{ fontSize: 9, color: colors.textMuted }}>{minW.toFixed(1)}</Text>
+                            </View>
+                            
+                            {/* Chart area */}
+                            <View style={{ 
+                              marginLeft: 40, 
+                              flex: 1, 
+                              position: 'relative',
+                              borderLeftWidth: 1,
+                              borderBottomWidth: 1,
+                              borderColor: colors.border,
+                            }}>
+                              {/* Grid lines */}
+                              <View style={{ 
+                                position: 'absolute', 
+                                left: 0, 
+                                right: 0, 
+                                top: chartHeight / 2,
+                                borderTopWidth: 1,
+                                borderColor: colors.border,
+                                borderStyle: 'dashed',
+                              }} />
+                              
+                              {/* Points and connecting lines */}
+                              {points.map((point, index) => (
+                                <React.Fragment key={point.entry.id || index}>
+                                  {/* Line to next point */}
+                                  {index < points.length - 1 && (
+                                    <View
+                                      style={{
+                                        position: 'absolute',
+                                        left: `${point.x}%`,
+                                        top: point.y,
+                                        width: `${points[index + 1].x - point.x}%`,
+                                        height: 2,
+                                        backgroundColor: colors.primary,
+                                        transform: [
+                                          { 
+                                            rotate: `${Math.atan2(
+                                              points[index + 1].y - point.y,
+                                              (points[index + 1].x - point.x) * 2.5 // Approx width factor
+                                            ) * (180 / Math.PI)}deg` 
+                                          },
+                                        ],
+                                        transformOrigin: 'left center',
+                                      }}
+                                    />
+                                  )}
+                                  {/* Point dot */}
+                                  <View
+                                    style={{
+                                      position: 'absolute',
+                                      left: `${point.x}%`,
+                                      top: point.y - 4,
+                                      width: 8,
+                                      height: 8,
+                                      borderRadius: 4,
+                                      backgroundColor: index === points.length - 1 ? colors.primary : colors.background,
+                                      borderWidth: 2,
+                                      borderColor: colors.primary,
+                                      marginLeft: -4,
+                                    }}
+                                  />
+                                </React.Fragment>
+                              ))}
+                            </View>
+                            
+                            {/* X-axis dates */}
+                            <View style={{ 
+                              flexDirection: 'row', 
+                              justifyContent: 'space-between',
+                              marginLeft: 40,
+                              marginTop: 4,
+                            }}>
+                              {displayHistory.length > 0 && (
+                                <>
+                                  <Text style={{ fontSize: 9, color: colors.textMuted }}>
+                                    {new Date(displayHistory[0].date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                                  </Text>
+                                  {displayHistory.length > 2 && (
+                                    <Text style={{ fontSize: 9, color: colors.textMuted }}>
+                                      {new Date(displayHistory[Math.floor(displayHistory.length / 2)].date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                                    </Text>
+                                  )}
+                                  <Text style={{ fontSize: 9, color: colors.textMuted }}>
+                                    {new Date(displayHistory[displayHistory.length - 1].date).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' })}
+                                  </Text>
+                                </>
+                              )}
+                            </View>
+                          </View>
+                        );
+                      })()}
+                    </View>
+                    
+                    {/* Weight change summary */}
+                    {(() => {
+                      const filteredHistory = weightHistory.filter(w => {
+                        if (weightPeriod === 'all') return true;
+                        const now = new Date();
+                        const entryDate = new Date(w.date);
+                        const monthsAgo = (now.getFullYear() - entryDate.getFullYear()) * 12 + now.getMonth() - entryDate.getMonth();
+                        if (weightPeriod === '2y') return monthsAgo <= 24;
+                        if (weightPeriod === '1y') return monthsAgo <= 12;
+                        if (weightPeriod === '6m') return monthsAgo <= 6;
+                        if (weightPeriod === '3m') return monthsAgo <= 3;
+                        if (weightPeriod === '1m') return monthsAgo <= 1;
+                        return true;
+                      });
+                      
+                      if (filteredHistory.length >= 2) {
+                        const firstWeight = filteredHistory[0].weight_kg;
+                        const lastWeight = filteredHistory[filteredHistory.length - 1].weight_kg;
+                        const change = lastWeight - firstWeight;
+                        const changeColor = change > 0 ? colors.error : change < 0 ? colors.fodmapLow : colors.textMuted;
+                        
+                        return (
+                          <View style={{ 
+                            flexDirection: 'row', 
+                            justifyContent: 'space-between', 
+                            marginTop: 10,
+                            paddingTop: 10,
+                            borderTopWidth: 1,
+                            borderTopColor: colors.border,
+                          }}>
+                            <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                              Variación: <Text style={{ fontWeight: '600', color: changeColor }}>
+                                {change > 0 ? '+' : ''}{change.toFixed(1)} kg
+                              </Text>
+                            </Text>
+                            <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                              Mín: {Math.min(...filteredHistory.map(w => w.weight_kg)).toFixed(1)} kg • 
+                              Máx: {Math.max(...filteredHistory.map(w => w.weight_kg)).toFixed(1)} kg
+                            </Text>
+                          </View>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </View>
+                )}
               </View>
             ) : (
               /* Empty State */
@@ -1971,45 +2195,435 @@ export default function HomeScreen() {
             )}
           </Card>
         </Animated.View>
+            </View>
+            <View style={{ flex: 1, display: 'flex' }}>
+              {/* Daily Nutrition Summary - Gamified */}
+              <Animated.View entering={FadeInDown.delay(200).springify()} style={{ flex: 1 }}>
+                <DailyNutritionCard
+                  colors={colors}
+                  consumed={{
+                    calories: todayCalories,
+                    protein: todayMacros.protein,
+                    carbs: todayMacros.carbs,
+                    fat: todayMacros.fat,
+                  }}
+                  targets={{
+                    calories: profile?.target_calories || 2000,
+                    protein_pct: profile?.target_protein_pct || 20,
+                    carbs_pct: profile?.target_carbs_pct || 50,
+                    fat_pct: profile?.target_fat_pct || 30,
+                  }}
+                  onEditTargets={() => setShowNutritionTargetsModal(true)}
+                />
+              </Animated.View>
+            </View>
+          </View>
+        ) : (
+          <>
+            {/* User Profile Card */}
+            <Animated.View entering={FadeInDown.delay(150).springify()}>
+              <Card style={{ 
+                padding: 0, 
+                overflow: 'hidden',
+                marginBottom: 16,
+              }}>
+                {/* Profile Header */}
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  padding: 16,
+                  paddingBottom: 12,
+                  borderBottomWidth: 1,
+                  borderBottomColor: colors.border,
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
+                      backgroundColor: colors.primary + '20',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Ionicons name="person" size={20} color={colors.primary} />
+                    </View>
+                    <View>
+                      <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text }}>
+                        Mi Perfil
+                      </Text>
+                      {profile?.gender && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 }}>
+                          <Ionicons 
+                            name={profile.gender === 'male' ? 'male' : profile.gender === 'female' ? 'female' : 'male-female'} 
+                            size={12} 
+                            color={colors.textMuted} 
+                          />
+                          <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                            {GENDER_LABELS[profile.gender]}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                  
+                  <Pressable
+                    onPress={() => setShowEditProfileModal(true)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 8,
+                      borderRadius: 20,
+                      backgroundColor: colors.cardElevated,
+                    }}
+                  >
+                    <Ionicons name="pencil" size={14} color={colors.textSecondary} />
+                    <Text style={{ fontSize: 13, color: colors.textSecondary, fontWeight: '500' }}>Editar</Text>
+                  </Pressable>
+                </View>
 
-        {/* Daily Nutrition Summary - Gamified */}
-        <Animated.View entering={FadeInDown.delay(200).springify()}>
-          <DailyNutritionCard
-            colors={colors}
-            consumed={{
-              calories: todayCalories,
-              protein: todayMacros.protein,
-              carbs: todayMacros.carbs,
-              fat: todayMacros.fat,
-            }}
-            targets={{
-              calories: profile?.target_calories || 2000,
-              protein_pct: profile?.target_protein_pct || 20,
-              carbs_pct: profile?.target_carbs_pct || 50,
-              fat_pct: profile?.target_fat_pct || 30,
-            }}
-          />
-        </Animated.View>
+                {/* Profile Content */}
+                {hasProfileData ? (
+                  <View style={{ padding: 16 }}>
+                    {/* Stats Row */}
+                    <View style={{ 
+                      flexDirection: 'row', 
+                      justifyContent: 'space-around',
+                      marginBottom: 16,
+                    }}>
+                      {/* Age */}
+                      <View style={{ alignItems: 'center', flex: 1 }}>
+                        <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4, letterSpacing: 0.5 }}>
+                          EDAD
+                        </Text>
+                        <Text style={{ fontSize: 26, fontWeight: '700', color: colors.text }}>
+                          {age ?? '—'}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                          años
+                        </Text>
+                      </View>
+                      
+                      {/* Height */}
+                      <View style={{ 
+                        alignItems: 'center', 
+                        flex: 1,
+                        borderLeftWidth: 1,
+                        borderRightWidth: 1,
+                        borderColor: colors.border,
+                      }}>
+                        <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4, letterSpacing: 0.5 }}>
+                          ALTURA
+                        </Text>
+                        <Text style={{ fontSize: 26, fontWeight: '700', color: colors.text }}>
+                          {profile?.height_cm ?? '—'}
+                        </Text>
+                        <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                          cm
+                        </Text>
+                      </View>
+                      
+                      {/* Weight */}
+                      <Pressable 
+                        onPress={() => setShowAddWeightModal(true)}
+                        style={{ alignItems: 'center', flex: 1 }}
+                      >
+                        <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4, letterSpacing: 0.5 }}>
+                          PESO
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                          <Text style={{ fontSize: 26, fontWeight: '700', color: colors.text }}>
+                            {latestWeight?.weight_kg.toFixed(1) ?? '—'}
+                          </Text>
+                          <Ionicons name="add-circle" size={18} color={colors.fodmapLow} />
+                        </View>
+                        <Text style={{ fontSize: 11, color: colors.textSecondary }}>
+                          kg
+                        </Text>
+                      </Pressable>
+                    </View>
 
-        {/* Today's Treatments - Enhanced Gamified Card */}
-        <Animated.View entering={FadeInDown.delay(250).springify()}>
-          <TodayTreatmentsCard
-            colors={colors}
-            treatments={todayTreatments}
-            onMarkDose={handleMarkDose}
-            onNavigate={() => router.push('/treatment' as any)}
-          />
-        </Animated.View>
+                    {/* BMI Card */}
+                    {bmi !== null && bmiInfo ? (
+                      <Animated.View 
+                        entering={FadeInUp.delay(200).springify()}
+                        style={{
+                          backgroundColor: bmiInfo.color + '12',
+                          borderRadius: 16,
+                          padding: 16,
+                          borderWidth: 2,
+                          borderColor: bmiInfo.color + '40',
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <View>
+                            <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 4, fontWeight: '500' }}>
+                              Índice de Masa Corporal (IMC)
+                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+                              <Text style={{ 
+                                fontSize: 40, 
+                                fontWeight: '800', 
+                                color: bmiInfo.color,
+                              }}>
+                                {bmi.toFixed(1)}
+                              </Text>
+                              <Text style={{ fontSize: 16, color: colors.textSecondary, fontWeight: '500' }}>
+                                kg/m²
+                              </Text>
+                            </View>
+                          </View>
+                          
+                          <View style={{
+                            paddingHorizontal: 16,
+                            paddingVertical: 10,
+                            borderRadius: 24,
+                            backgroundColor: bmiInfo.color,
+                          }}>
+                            <Text style={{ 
+                              fontSize: 14, 
+                              fontWeight: '700', 
+                              color: '#FFFFFF',
+                            }}>
+                              {bmiInfo.label}
+                            </Text>
+                          </View>
+                        </View>
+                        
+                        {/* BMI Scale Visualization */}
+                        <View style={{ marginTop: 20 }}>
+                          <View style={{ 
+                            flexDirection: 'row', 
+                            height: 10, 
+                            borderRadius: 5,
+                            overflow: 'hidden',
+                          }}>
+                            <View style={{ flex: 1, backgroundColor: BMI_CATEGORIES.underweight.color }} />
+                            <View style={{ flex: 1.5, backgroundColor: BMI_CATEGORIES.normal.color }} />
+                            <View style={{ flex: 1, backgroundColor: BMI_CATEGORIES.overweight.color }} />
+                            <View style={{ flex: 1.5, backgroundColor: BMI_CATEGORIES.obese.color }} />
+                          </View>
+                          {/* Indicator */}
+                          <View style={{ 
+                            position: 'absolute',
+                            top: -2,
+                            left: `${Math.min(Math.max((bmi - 15) / 25 * 100, 2), 98)}%`,
+                            marginLeft: -8,
+                          }}>
+                            <View style={{
+                              width: 16,
+                              height: 16,
+                              borderRadius: 8,
+                              backgroundColor: '#FFFFFF',
+                              borderWidth: 3,
+                              borderColor: bmiInfo.color,
+                              shadowColor: '#000',
+                              shadowOffset: { width: 0, height: 2 },
+                              shadowOpacity: 0.25,
+                              shadowRadius: 3,
+                              elevation: 4,
+                            }} />
+                          </View>
+                        </View>
+                        
+                        <View style={{ 
+                          flexDirection: 'row', 
+                          justifyContent: 'space-between',
+                          marginTop: 8,
+                          paddingHorizontal: 4,
+                        }}>
+                          <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>15</Text>
+                          <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>18.5</Text>
+                          <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>25</Text>
+                          <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>30</Text>
+                          <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>40</Text>
+                        </View>
+                      </Animated.View>
+                    ) : (
+                      <View style={{
+                        backgroundColor: colors.cardElevated,
+                        borderRadius: 12,
+                        padding: 16,
+                        alignItems: 'center',
+                      }}>
+                        <Ionicons name="analytics-outline" size={24} color={colors.textMuted} style={{ marginBottom: 8 }} />
+                        <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
+                          {!profile?.height_cm && !latestWeight 
+                            ? 'Añade tu altura y peso para calcular tu IMC'
+                            : !profile?.height_cm 
+                            ? 'Añade tu altura para calcular tu IMC'
+                            : 'Añade tu peso para calcular tu IMC'}
+                        </Text>
+                      </View>
+                    )}
 
-        {/* Today's Activities - Enhanced Gamified Card */}
-        <Animated.View entering={FadeInDown.delay(300).springify()}>
-          <TodayActivitiesCard
-            colors={colors}
-            activities={todayActivities}
-            onMarkComplete={handleMarkActivity}
-            onNavigate={() => router.push('/activity' as any)}
-          />
-        </Animated.View>
+                    {/* Weight Timeline */}
+                    {weightHistory.length > 1 && (
+                      <View style={{
+                        marginTop: 16,
+                        backgroundColor: colors.cardElevated,
+                        borderRadius: 12,
+                        padding: 14,
+                      }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                          <Ionicons name="trending-up" size={16} color={colors.primary} style={{ marginRight: 6 }} />
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
+                            Historial de peso
+                          </Text>
+                          <Text style={{ fontSize: 11, color: colors.textMuted, marginLeft: 'auto' }}>
+                            {weightHistory.length} registros
+                          </Text>
+                        </View>
+                        
+                        {/* Mini Chart */}
+                        <View style={{ height: 50, flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
+                          {(() => {
+                            const weights = weightHistory.map(w => w.weight_kg);
+                            const minW = Math.min(...weights) - 1;
+                            const maxW = Math.max(...weights) + 1;
+                            const range = maxW - minW || 1;
+                            const displayHistory = weightHistory.slice(-15);
+                            
+                            return displayHistory.map((entry, index) => {
+                              const height = ((entry.weight_kg - minW) / range) * 40 + 10;
+                              const isLatest = index === displayHistory.length - 1;
+                              
+                              return (
+                                <View
+                                  key={entry.id || index}
+                                  style={{
+                                    flex: 1,
+                                    height,
+                                    backgroundColor: isLatest ? colors.primary : colors.primary + '50',
+                                    borderRadius: 3,
+                                  }}
+                                />
+                              );
+                            });
+                          })()}
+                        </View>
+                        
+                        {/* Weight range labels */}
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
+                          <Text style={{ fontSize: 10, color: colors.textMuted }}>
+                            Min: {Math.min(...weightHistory.map(w => w.weight_kg)).toFixed(1)} kg
+                          </Text>
+                          <Text style={{ fontSize: 10, color: colors.textMuted }}>
+                            Max: {Math.max(...weightHistory.map(w => w.weight_kg)).toFixed(1)} kg
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+                  </View>
+                ) : (
+                  <Pressable 
+                    onPress={() => setShowEditProfileModal(true)}
+                    style={{ padding: 32, alignItems: 'center' }}
+                  >
+                    <View style={{
+                      width: 64,
+                      height: 64,
+                      borderRadius: 32,
+                      backgroundColor: colors.primary + '15',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginBottom: 12,
+                    }}>
+                      <Ionicons name="person-add" size={28} color={colors.primary} />
+                    </View>
+                    <Text style={{ 
+                      fontSize: 15, 
+                      fontWeight: '600',
+                      color: colors.text,
+                      marginBottom: 4,
+                    }}>
+                      Configura tu perfil
+                    </Text>
+                    <Text style={{ 
+                      fontSize: 13, 
+                      color: colors.textSecondary,
+                      textAlign: 'center',
+                    }}>
+                      Añade tu información para calcular tu IMC y seguir tu progreso
+                    </Text>
+                  </Pressable>
+                )}
+              </Card>
+            </Animated.View>
+
+            {/* Daily Nutrition Summary - Gamified */}
+            <Animated.View entering={FadeInDown.delay(200).springify()}>
+              <DailyNutritionCard
+                colors={colors}
+                consumed={{
+                  calories: todayCalories,
+                  protein: todayMacros.protein,
+                  carbs: todayMacros.carbs,
+                  fat: todayMacros.fat,
+                }}
+                targets={{
+                  calories: profile?.target_calories || 2000,
+                  protein_pct: profile?.target_protein_pct || 20,
+                  carbs_pct: profile?.target_carbs_pct || 50,
+                  fat_pct: profile?.target_fat_pct || 30,
+                }}
+                onEditTargets={() => setShowNutritionTargetsModal(true)}
+              />
+            </Animated.View>
+          </>
+        )}
+
+        {/* Treatments and Activities Row (Large Screens) */}
+        {isLargeScreen ? (
+          <View style={{ flexDirection: 'row', gap: 16, marginBottom: 16 }}>
+            <View style={{ flex: 1 }}>
+              {/* Today's Treatments - Enhanced Gamified Card */}
+              <Animated.View entering={FadeInDown.delay(250).springify()}>
+                <TodayTreatmentsCard
+                  colors={colors}
+                  treatments={todayTreatments}
+                  onMarkDose={handleMarkDose}
+                  onNavigate={() => router.push('/treatment' as any)}
+                />
+              </Animated.View>
+            </View>
+            <View style={{ flex: 1 }}>
+              {/* Today's Activities - Enhanced Gamified Card */}
+              <Animated.View entering={FadeInDown.delay(300).springify()}>
+                <TodayActivitiesCard
+                  colors={colors}
+                  activities={todayActivities}
+                  onMarkComplete={handleMarkActivity}
+                  onNavigate={() => router.push('/activity' as any)}
+                />
+              </Animated.View>
+            </View>
+          </View>
+        ) : (
+          <>
+            {/* Today's Treatments - Enhanced Gamified Card */}
+            <Animated.View entering={FadeInDown.delay(250).springify()}>
+              <TodayTreatmentsCard
+                colors={colors}
+                treatments={todayTreatments}
+                onMarkDose={handleMarkDose}
+                onNavigate={() => router.push('/treatment' as any)}
+              />
+            </Animated.View>
+
+            {/* Today's Activities - Enhanced Gamified Card */}
+            <Animated.View entering={FadeInDown.delay(300).springify()}>
+              <TodayActivitiesCard
+                colors={colors}
+                activities={todayActivities}
+                onMarkComplete={handleMarkActivity}
+                onNavigate={() => router.push('/activity' as any)}
+              />
+            </Animated.View>
+          </>
+        )}
 
         {/* Recent Activity */}
         <Animated.View entering={FadeInDown.delay(350).springify()}>
@@ -2409,6 +3023,292 @@ export default function HomeScreen() {
                   </Text>
                 </Pressable>
               </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Nutrition Targets Modal */}
+      <Modal
+        visible={showNutritionTargetsModal}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowNutritionTargetsModal(false)}
+      >
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+          <View style={{ 
+            backgroundColor: colors.card, 
+            borderTopLeftRadius: 24, 
+            borderTopRightRadius: 24,
+            maxHeight: '85%',
+          }}>
+            {/* Modal Header */}
+            <View style={{ 
+              flexDirection: 'row', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: 16,
+              borderBottomWidth: 1,
+              borderBottomColor: colors.border,
+            }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                <View style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: 12,
+                  backgroundColor: colors.primary + '20',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <Ionicons name="flag" size={20} color={colors.primary} />
+                </View>
+                <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
+                  Objetivos Nutricionales
+                </Text>
+              </View>
+              <Pressable onPress={() => setShowNutritionTargetsModal(false)}>
+                <Ionicons name="close" size={24} color={colors.text} />
+              </Pressable>
+            </View>
+
+            <ScrollView style={{ padding: 16 }}>
+              {/* Auto-calculate Button */}
+              {profile?.height_cm && latestWeight && profile?.birth_date && profile?.gender && (
+                <Pressable
+                  onPress={() => {
+                    const age = calculateAge(profile.birth_date!);
+                    if (age) {
+                      const recommended = calculateDailyCalories(
+                        latestWeight.weight_kg,
+                        profile.height_cm!,
+                        age,
+                        profile.gender!,
+                        'moderate'
+                      );
+                      setEditTargetCalories(Math.round(recommended).toString());
+                      Alert.alert(
+                        'Calorías Calculadas',
+                        `Basado en tu perfil (${latestWeight.weight_kg}kg, ${profile.height_cm}cm, ${age} años), tu ingesta diaria recomendada es de ${Math.round(recommended)} kcal para un nivel de actividad moderado.`,
+                        [{ text: 'OK' }]
+                      );
+                    }
+                  }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    backgroundColor: colors.primary + '15',
+                    padding: 14,
+                    borderRadius: 12,
+                    marginBottom: 20,
+                    borderWidth: 1,
+                    borderColor: colors.primary + '30',
+                  }}
+                >
+                  <Ionicons name="calculator" size={20} color={colors.primary} />
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: colors.primary }}>
+                    Calcular calorías recomendadas
+                  </Text>
+                </Pressable>
+              )}
+              
+              {/* Calories Target */}
+              <View style={{ marginBottom: 20 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                  Calorías diarias objetivo
+                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TextInput
+                    value={editTargetCalories}
+                    onChangeText={setEditTargetCalories}
+                    placeholder="2000"
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="numeric"
+                    style={{
+                      flex: 1,
+                      fontSize: 24,
+                      fontWeight: '700',
+                      color: colors.text,
+                      padding: 14,
+                      backgroundColor: colors.cardElevated,
+                      borderRadius: 12,
+                      textAlign: 'center',
+                    }}
+                  />
+                  <Text style={{ fontSize: 16, color: colors.textSecondary, fontWeight: '600' }}>kcal</Text>
+                </View>
+              </View>
+              
+              {/* Macros Percentages */}
+              <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
+                Distribución de macronutrientes (%)
+              </Text>
+              
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 20 }}>
+                <View style={{ flex: 1 }}>
+                  <View style={{
+                    backgroundColor: '#E91E63' + '15',
+                    borderRadius: 12,
+                    padding: 14,
+                    alignItems: 'center',
+                  }}>
+                    <Ionicons name="fish" size={20} color="#E91E63" />
+                    <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 4, marginBottom: 8 }}>
+                      Proteína
+                    </Text>
+                    <TextInput
+                      value={editTargetProtein}
+                      onChangeText={setEditTargetProtein}
+                      placeholder="20"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="numeric"
+                      style={{
+                        fontSize: 22,
+                        fontWeight: '700',
+                        color: '#E91E63',
+                        textAlign: 'center',
+                        minWidth: 50,
+                      }}
+                    />
+                    <Text style={{ fontSize: 13, color: colors.textMuted }}>%</Text>
+                  </View>
+                </View>
+                
+                <View style={{ flex: 1 }}>
+                  <View style={{
+                    backgroundColor: '#FF9800' + '15',
+                    borderRadius: 12,
+                    padding: 14,
+                    alignItems: 'center',
+                  }}>
+                    <Ionicons name="leaf" size={20} color="#FF9800" />
+                    <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 4, marginBottom: 8 }}>
+                      Carbos
+                    </Text>
+                    <TextInput
+                      value={editTargetCarbs}
+                      onChangeText={setEditTargetCarbs}
+                      placeholder="50"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="numeric"
+                      style={{
+                        fontSize: 22,
+                        fontWeight: '700',
+                        color: '#FF9800',
+                        textAlign: 'center',
+                        minWidth: 50,
+                      }}
+                    />
+                    <Text style={{ fontSize: 13, color: colors.textMuted }}>%</Text>
+                  </View>
+                </View>
+                
+                <View style={{ flex: 1 }}>
+                  <View style={{
+                    backgroundColor: '#2196F3' + '15',
+                    borderRadius: 12,
+                    padding: 14,
+                    alignItems: 'center',
+                  }}>
+                    <Ionicons name="water" size={20} color="#2196F3" />
+                    <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 4, marginBottom: 8 }}>
+                      Grasas
+                    </Text>
+                    <TextInput
+                      value={editTargetFat}
+                      onChangeText={setEditTargetFat}
+                      placeholder="30"
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="numeric"
+                      style={{
+                        fontSize: 22,
+                        fontWeight: '700',
+                        color: '#2196F3',
+                        textAlign: 'center',
+                        minWidth: 50,
+                      }}
+                    />
+                    <Text style={{ fontSize: 13, color: colors.textMuted }}>%</Text>
+                  </View>
+                </View>
+              </View>
+              
+              {/* Total check */}
+              {(() => {
+                const total = (parseInt(editTargetProtein) || 0) + (parseInt(editTargetCarbs) || 0) + (parseInt(editTargetFat) || 0);
+                const isValid = total === 100;
+                return (
+                  <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 8,
+                    padding: 12,
+                    backgroundColor: isValid ? colors.fodmapLow + '15' : colors.fodmapHigh + '15',
+                    borderRadius: 10,
+                    marginBottom: 20,
+                  }}>
+                    <Ionicons 
+                      name={isValid ? 'checkmark-circle' : 'warning'} 
+                      size={18} 
+                      color={isValid ? colors.fodmapLow : colors.fodmapHigh} 
+                    />
+                    <Text style={{ 
+                      fontSize: 13, 
+                      color: isValid ? colors.fodmapLow : colors.fodmapHigh,
+                      fontWeight: '600',
+                    }}>
+                      Total: {total}% {!isValid && '(debe sumar 100%)'}
+                    </Text>
+                  </View>
+                );
+              })()}
+
+              {/* Save Button */}
+              <Pressable
+                onPress={async () => {
+                  try {
+                    const db = await getDatabase();
+                    await db.runAsync(
+                      `UPDATE user_profile SET 
+                        target_calories = ?, 
+                        target_protein_pct = ?, 
+                        target_carbs_pct = ?, 
+                        target_fat_pct = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                      WHERE id = 1`,
+                      [
+                        parseInt(editTargetCalories) || 2000,
+                        parseInt(editTargetProtein) || 20,
+                        parseInt(editTargetCarbs) || 50,
+                        parseInt(editTargetFat) || 30,
+                      ]
+                    );
+                    await loadProfile();
+                    setShowNutritionTargetsModal(false);
+                    Alert.alert('¡Guardado!', 'Objetivos nutricionales actualizados');
+                  } catch (error) {
+                    console.error('Error saving targets:', error);
+                    Alert.alert('Error', 'No se pudieron guardar los objetivos');
+                  }
+                }}
+                style={{
+                  backgroundColor: colors.primary,
+                  paddingVertical: 16,
+                  borderRadius: 14,
+                  alignItems: 'center',
+                  marginBottom: 30,
+                  flexDirection: 'row',
+                  justifyContent: 'center',
+                  gap: 8,
+                }}
+              >
+                <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                <Text style={{ fontSize: 16, fontWeight: '700', color: '#FFFFFF' }}>
+                  Guardar Objetivos
+                </Text>
+              </Pressable>
             </ScrollView>
           </View>
         </View>

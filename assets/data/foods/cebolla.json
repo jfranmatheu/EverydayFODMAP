@@ -14,6 +14,25 @@
     "overall": "high"
   },
   "serving_size": "Evitar",
-  "notes": "Usar la parte verde de la cebolleta como alternativa"
+  "notes": "Usar la parte verde de la cebolleta como alternativa",
+  "nutrition": {
+    "calories": 40,
+    "protein_g": 1.1,
+    "carbs_g": 9.34,
+    "fiber_g": 1.7,
+    "sugars_g": 4.24,
+    "fat_g": 0.1,
+    "sodium_mg": 4,
+    "potassium_mg": 146,
+    "calcium_mg": 23,
+    "iron_mg": 0.21,
+    "magnesium_mg": 10,
+    "phosphorus_mg": 29,
+    "zinc_mg": 0.17,
+    "vitamin_c_mg": 7.4,
+    "vitamin_b6_mg": 0.12,
+    "vitamin_b9_mcg": 19,
+    "manganese_mg": 0.129
+  }
 }
 

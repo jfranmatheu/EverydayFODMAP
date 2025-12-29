@@ -13,6 +13,25 @@
     "overall": "low",
     "safe_serving": "100g"
   },
-  "serving_size": "100g"
+  "serving_size": "100g",
+  "nutrition": {
+    "calories": 89,
+    "protein_g": 1.09,
+    "carbs_g": 22.84,
+    "fiber_g": 2.6,
+    "sugars_g": 12.23,
+    "fat_g": 0.33,
+    "sodium_mg": 1,
+    "potassium_mg": 358,
+    "calcium_mg": 5,
+    "iron_mg": 0.26,
+    "magnesium_mg": 27,
+    "phosphorus_mg": 22,
+    "zinc_mg": 0.15,
+    "vitamin_c_mg": 8.7,
+    "vitamin_b6_mg": 0.367,
+    "vitamin_b9_mcg": 20,
+    "manganese_mg": 0.27
+  }
 }
 
