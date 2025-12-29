@@ -103,52 +103,238 @@ function filterByWhere(items: any[], sql: string, params?: any[]): any[] {
   }
   
   const whereClause = whereMatch[1];
+  console.log(`[WebDB] Processing WHERE: ${whereClause.substring(0, 100)}`);
+  console.log(`[WebDB] With params:`, params);
   
-  // Handle: date BETWEEN ? AND ?
-  if (whereClause.toLowerCase().includes('between') && params && params.length >= 2) {
-    const startDate = params[0];
-    const endDate = params[1];
-    return items.filter(item => item.date >= startDate && item.date <= endDate);
-  }
+  // Create a parameter index counter
+  let paramIndex = 0;
+  const getNextParam = () => {
+    if (!params || paramIndex >= params.length) return null;
+    return params[paramIndex++];
+  };
   
-  // Handle literal values in WHERE: column = number (e.g., WHERE id = 1)
-  const literalNumberMatch = whereClause.match(/(\w+)\s*=\s*(\d+)/);
-  if (literalNumberMatch) {
-    const column = literalNumberMatch[1];
-    const value = parseInt(literalNumberMatch[2]);
-    console.log(`[WebDB] Filtering by ${column} = ${value} (literal), items before: ${items.length}`);
-    const filtered = items.filter(item => valuesEqual(item[column], value));
-    console.log(`[WebDB] After filter: ${filtered.length}`);
-    return filtered;
-  }
+  // Evaluate the WHERE clause for each item
+  const filtered = items.filter(item => {
+    // Reset param index for each item
+    paramIndex = 0;
+    return evaluateCondition(item, whereClause, getNextParam);
+  });
   
-  // Handle literal string values: column = 'value'
-  const literalStringMatch = whereClause.match(/(\w+)\s*=\s*'([^']+)'/);
-  if (literalStringMatch) {
-    const column = literalStringMatch[1];
-    const value = literalStringMatch[2];
-    console.log(`[WebDB] Filtering by ${column} = '${value}' (literal string), items before: ${items.length}`);
-    const filtered = items.filter(item => valuesEqual(item[column], value));
-    console.log(`[WebDB] After filter: ${filtered.length}`);
-    return filtered;
-  }
-  
-  // Handle placeholder: column = ?
-  if (params && params.length > 0) {
-    const columnMatch = whereClause.match(/(\w+)\s*=\s*\?/);
-    if (columnMatch) {
-      const column = columnMatch[1];
-      const value = params[0];
-      console.log(`[WebDB] Filtering by ${column} = ${value} (param), items before: ${items.length}`);
-      const filtered = items.filter(item => valuesEqual(item[column], value));
-      console.log(`[WebDB] After filter: ${filtered.length}`);
-      return filtered;
+  console.log(`[WebDB] Filter result: ${items.length} -> ${filtered.length}`);
+  return filtered;
+}
+
+// Evaluate a condition for an item
+function evaluateCondition(item: any, clause: string, getNextParam: () => any): boolean {
+  // Remove outer parentheses
+  clause = clause.trim();
+  while (clause.startsWith('(') && clause.endsWith(')')) {
+    // Check if these are matching parentheses
+    let depth = 0;
+    let allInner = true;
+    for (let i = 0; i < clause.length; i++) {
+      if (clause[i] === '(') depth++;
+      else if (clause[i] === ')') depth--;
+      if (depth === 0 && i < clause.length - 1) {
+        allInner = false;
+        break;
+      }
+    }
+    if (allInner) {
+      clause = clause.slice(1, -1).trim();
+    } else {
+      break;
     }
   }
   
-  // Default: return all items if we can't parse the WHERE clause
-  console.log(`[WebDB] Unhandled WHERE clause: ${whereClause}, returning all ${items.length} items`);
-  return items;
+  // Handle AND - split on top-level AND
+  const andParts = splitOnTopLevel(clause, 'AND');
+  if (andParts.length > 1) {
+    return andParts.every(part => evaluateCondition(item, part.trim(), getNextParam));
+  }
+  
+  // Handle OR - split on top-level OR
+  const orParts = splitOnTopLevel(clause, 'OR');
+  if (orParts.length > 1) {
+    return orParts.some(part => evaluateCondition(item, part.trim(), getNextParam));
+  }
+  
+  // Now evaluate a simple condition
+  return evaluateSimpleCondition(item, clause, getNextParam);
+}
+
+// Split a clause on a keyword, respecting parentheses
+function splitOnTopLevel(clause: string, keyword: string): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let depth = 0;
+  const words = clause.split(/(\s+)/);
+  
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    
+    // Count parentheses
+    for (const char of word) {
+      if (char === '(') depth++;
+      else if (char === ')') depth--;
+    }
+    
+    // Check if this word is the keyword at depth 0
+    if (depth === 0 && word.toUpperCase() === keyword) {
+      if (current.trim()) {
+        parts.push(current.trim());
+      }
+      current = '';
+    } else {
+      current += word;
+    }
+  }
+  
+  if (current.trim()) {
+    parts.push(current.trim());
+  }
+  
+  return parts;
+}
+
+// Evaluate a simple condition (column op value)
+function evaluateSimpleCondition(item: any, clause: string, getNextParam: () => any): boolean {
+  clause = clause.trim();
+  
+  // Handle parentheses
+  if (clause.startsWith('(')) {
+    return evaluateCondition(item, clause, getNextParam);
+  }
+  
+  // Handle: column IS NULL
+  const isNullMatch = clause.match(/^(\w+)\s+IS\s+NULL$/i);
+  if (isNullMatch) {
+    const column = isNullMatch[1];
+    const value = item[column];
+    return value === null || value === undefined;
+  }
+  
+  // Handle: column IS NOT NULL
+  const isNotNullMatch = clause.match(/^(\w+)\s+IS\s+NOT\s+NULL$/i);
+  if (isNotNullMatch) {
+    const column = isNotNullMatch[1];
+    const value = item[column];
+    return value !== null && value !== undefined;
+  }
+  
+  // Handle: column BETWEEN ? AND ?
+  const betweenMatch = clause.match(/^(\w+)\s+BETWEEN\s+\?\s+AND\s+\?$/i);
+  if (betweenMatch) {
+    const column = betweenMatch[1];
+    const start = getNextParam();
+    const end = getNextParam();
+    const value = item[column];
+    return value >= start && value <= end;
+  }
+  
+  // Handle: column <= ?
+  const lteParamMatch = clause.match(/^(\w+)\s*<=\s*\?$/);
+  if (lteParamMatch) {
+    const column = lteParamMatch[1];
+    const paramValue = getNextParam();
+    const itemValue = item[column];
+    if (itemValue === null || itemValue === undefined) return false;
+    return itemValue <= paramValue;
+  }
+  
+  // Handle: column >= ?
+  const gteParamMatch = clause.match(/^(\w+)\s*>=\s*\?$/);
+  if (gteParamMatch) {
+    const column = gteParamMatch[1];
+    const paramValue = getNextParam();
+    const itemValue = item[column];
+    if (itemValue === null || itemValue === undefined) return false;
+    return itemValue >= paramValue;
+  }
+  
+  // Handle: column < ?
+  const ltParamMatch = clause.match(/^(\w+)\s*<\s*\?$/);
+  if (ltParamMatch) {
+    const column = ltParamMatch[1];
+    const paramValue = getNextParam();
+    const itemValue = item[column];
+    if (itemValue === null || itemValue === undefined) return false;
+    return itemValue < paramValue;
+  }
+  
+  // Handle: column > ?
+  const gtParamMatch = clause.match(/^(\w+)\s*>\s*\?$/);
+  if (gtParamMatch) {
+    const column = gtParamMatch[1];
+    const paramValue = getNextParam();
+    const itemValue = item[column];
+    if (itemValue === null || itemValue === undefined) return false;
+    return itemValue > paramValue;
+  }
+  
+  // Handle: column = ?
+  const eqParamMatch = clause.match(/^(\w+)\s*=\s*\?$/);
+  if (eqParamMatch) {
+    const column = eqParamMatch[1];
+    const paramValue = getNextParam();
+    return valuesEqual(item[column], paramValue);
+  }
+  
+  // Handle: column = number (literal)
+  const eqNumMatch = clause.match(/^(\w+)\s*=\s*(\d+)$/);
+  if (eqNumMatch) {
+    const column = eqNumMatch[1];
+    const value = parseInt(eqNumMatch[2]);
+    return valuesEqual(item[column], value);
+  }
+  
+  // Handle: column = 'string' (literal)
+  const eqStrMatch = clause.match(/^(\w+)\s*=\s*'([^']*)'$/);
+  if (eqStrMatch) {
+    const column = eqStrMatch[1];
+    const value = eqStrMatch[2];
+    return valuesEqual(item[column], value);
+  }
+  
+  // Handle: column <= 'string' (date comparison)
+  const lteStrMatch = clause.match(/^(\w+)\s*<=\s*'([^']*)'$/);
+  if (lteStrMatch) {
+    const column = lteStrMatch[1];
+    const value = lteStrMatch[2];
+    const itemValue = item[column];
+    if (itemValue === null || itemValue === undefined) return false;
+    return itemValue <= value;
+  }
+  
+  // Handle: column >= 'string' (date comparison)
+  const gteStrMatch = clause.match(/^(\w+)\s*>=\s*'([^']*)'$/);
+  if (gteStrMatch) {
+    const column = gteStrMatch[1];
+    const value = gteStrMatch[2];
+    const itemValue = item[column];
+    if (itemValue === null || itemValue === undefined) return false;
+    return itemValue >= value;
+  }
+  
+  // Handle: t.column = value (with table alias)
+  const aliasMatch = clause.match(/^(\w+)\.(\w+)\s*=\s*(\d+)$/);
+  if (aliasMatch) {
+    const column = aliasMatch[2];
+    const value = parseInt(aliasMatch[3]);
+    return valuesEqual(item[column], value);
+  }
+  
+  // Handle: t.column = ? (with table alias)
+  const aliasParamMatch = clause.match(/^(\w+)\.(\w+)\s*=\s*\?$/);
+  if (aliasParamMatch) {
+    const column = aliasParamMatch[2];
+    const paramValue = getNextParam();
+    return valuesEqual(item[column], paramValue);
+  }
+  
+  // If we can't parse, return true (don't filter out)
+  console.log(`[WebDB] Could not parse condition: ${clause}, returning true`);
+  return true;
 }
 
 // Web mock database implementation
@@ -919,6 +1105,18 @@ export async function initDatabase(): Promise<void> {
       birth_date TEXT,
       gender TEXT CHECK(gender IN ('male', 'female', 'other') OR gender IS NULL),
       height_cm REAL,
+      -- Target nutrition info
+      target_calories INTEGER,
+      target_protein_pct INTEGER,
+      target_carbs_pct INTEGER,
+      target_fat_pct INTEGER,
+      -- Optional detailed targets
+      target_fiber_g REAL,
+      target_sugars_g REAL,
+      target_sodium_mg REAL,
+      target_potassium_mg REAL,
+      target_saturated_fat_g REAL,
+      target_cholesterol_mg REAL,
       created_at TEXT DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT DEFAULT CURRENT_TIMESTAMP
     );

@@ -6,11 +6,13 @@ import {
   BMI_CATEGORIES,
   calculateAge,
   calculateBMI,
+  calculateMacroGrams,
   Gender,
   GENDER_LABELS,
   getBMICategory,
+  NutritionInfo,
   UserProfile,
-  WeightLog,
+  WeightLog
 } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -63,10 +65,24 @@ export default function HomeScreen() {
   const [activeTreatments, setActiveTreatments] = useState(0);
   const [scheduledActivities, setScheduledActivities] = useState(0);
   
+  // Today's treatments and activities
+  const [todayTreatments, setTodayTreatments] = useState<any[]>([]);
+  const [todayActivities, setTodayActivities] = useState<any[]>([]);
+  
+  // Daily nutrition consumed
+  const [todayCalories, setTodayCalories] = useState(0);
+  const [todayMacros, setTodayMacros] = useState({ protein: 0, carbs: 0, fat: 0 });
+  
   // Edit profile form
   const [editBirthDate, setEditBirthDate] = useState('');
   const [editGender, setEditGender] = useState<Gender | null>(null);
   const [editHeight, setEditHeight] = useState('');
+  
+  // Target nutrition form
+  const [editTargetCalories, setEditTargetCalories] = useState('');
+  const [editTargetProtein, setEditTargetProtein] = useState('');
+  const [editTargetCarbs, setEditTargetCarbs] = useState('');
+  const [editTargetFat, setEditTargetFat] = useState('');
   
   // Add weight form
   const [newWeight, setNewWeight] = useState('');
@@ -98,7 +114,9 @@ export default function HomeScreen() {
       loadProfile(), 
       loadLatestWeight(), 
       loadRecentActivity(),
-      loadStats()
+      loadStats(),
+      loadTodayNutrition(),
+      loadTodayTreatmentsAndActivities()
     ]);
   };
 
@@ -116,6 +134,10 @@ export default function HomeScreen() {
         setEditBirthDate(profileData.birth_date || '');
         setEditGender(profileData.gender as Gender | null);
         setEditHeight(profileData.height_cm?.toString() || '');
+        setEditTargetCalories(profileData.target_calories?.toString() || '');
+        setEditTargetProtein(profileData.target_protein_pct?.toString() || '');
+        setEditTargetCarbs(profileData.target_carbs_pct?.toString() || '');
+        setEditTargetFat(profileData.target_fat_pct?.toString() || '');
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -248,6 +270,424 @@ export default function HomeScreen() {
     }
   };
 
+  const loadTodayNutrition = async () => {
+    try {
+      const db = await getDatabase();
+      const today = new Date().toISOString().split('T')[0];
+      
+      // Get all meal items for today
+      const items = await db.getAllAsync(
+        `SELECT mi.quantity, f.nutrition as food_nutrition, r.nutrition as recipe_nutrition
+         FROM meal_items mi
+         JOIN meals m ON mi.meal_id = m.id
+         LEFT JOIN foods f ON mi.food_id = f.id
+         LEFT JOIN recipes r ON mi.recipe_id = r.id
+         WHERE m.date = ?`,
+        [today]
+      ) as any[];
+      
+      let totalCalories = 0;
+      let totalProtein = 0;
+      let totalCarbs = 0;
+      let totalFat = 0;
+      
+      for (const item of items) {
+        const nutritionStr = item.food_nutrition || item.recipe_nutrition;
+        if (nutritionStr) {
+          try {
+            const nutrition: NutritionInfo = typeof nutritionStr === 'string' 
+              ? JSON.parse(nutritionStr) 
+              : nutritionStr;
+            const qty = item.quantity || 1;
+            totalCalories += (nutrition.calories || 0) * qty;
+            totalProtein += (nutrition.protein_g || 0) * qty;
+            totalCarbs += (nutrition.carbs_g || 0) * qty;
+            totalFat += (nutrition.fat_g || 0) * qty;
+          } catch (e) {
+            // Skip invalid nutrition data
+          }
+        }
+      }
+      
+      setTodayCalories(Math.round(totalCalories));
+      setTodayMacros({
+        protein: Math.round(totalProtein),
+        carbs: Math.round(totalCarbs),
+        fat: Math.round(totalFat),
+      });
+    } catch (error) {
+      console.error('Error loading today nutrition:', error);
+    }
+  };
+
+  const loadTodayTreatmentsAndActivities = async () => {
+    try {
+      const db = await getDatabase();
+      const today = new Date().toISOString().split('T')[0];
+      const dayOfWeek = new Date().getDay(); // 0 = Sunday
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+      const todayDayName = dayNames[dayOfWeek];
+
+      console.log('[Home] Loading treatments and activities for:', today, todayDayName);
+
+      // Get ALL active treatments first (simpler query for web compatibility)
+      const allTreatments = await db.getAllAsync(
+        `SELECT * FROM treatments WHERE is_active = 1`,
+        []
+      ) as any[];
+
+      console.log('[Home] All active treatments:', allTreatments.length);
+
+      // Filter treatments that are valid for today
+      const todayTreatments = allTreatments.filter(t => {
+        // Chronic treatments are always valid
+        if (t.is_chronic === 1) return true;
+        
+        // Check date range
+        const hasStartDate = t.start_date && t.start_date !== '';
+        const hasEndDate = t.end_date && t.end_date !== '';
+        
+        if (!hasStartDate) return true; // No start date = always valid
+        if (t.start_date > today) return false; // Haven't started yet
+        if (hasEndDate && t.end_date < today) return false; // Already ended
+        
+        return true;
+      });
+
+      console.log('[Home] Treatments valid for today:', todayTreatments.length);
+
+      // Process treatments to get today's doses
+      const processedTreatments: any[] = [];
+
+      for (const treatment of todayTreatments) {
+        console.log(`[Home] Processing treatment: ${treatment.name}`);
+        
+        // Check if today is a valid day for this treatment
+        let isValidDay = true;
+        if (treatment.specific_days && treatment.specific_days !== '') {
+          try {
+            // specific_days can be a JSON array or comma-separated string
+            let daysArray: string[] = [];
+            if (treatment.specific_days.startsWith('[')) {
+              daysArray = JSON.parse(treatment.specific_days);
+            } else {
+              daysArray = treatment.specific_days.split(',').map((s: string) => s.trim());
+            }
+            isValidDay = daysArray.includes(todayDayName);
+            console.log(`[Home]   -> Specific days: ${daysArray}, today: ${todayDayName}, valid: ${isValidDay}`);
+          } catch (e) {
+            // If parsing fails, assume it's valid
+            console.log(`[Home]   -> Parse error for specific_days, assuming valid`);
+            isValidDay = true;
+          }
+        } else {
+          console.log(`[Home]   -> No specific_days restriction, valid for all days`);
+        }
+
+        if (!isValidDay) {
+          console.log(`[Home]   -> Skipping, not valid for today`);
+          continue;
+        }
+
+        // Parse doses from JSON
+        let treatmentDoses: any[] = [];
+        try {
+          treatmentDoses = treatment.doses ? JSON.parse(treatment.doses) : [];
+          console.log(`[Home]   -> Parsed doses from JSON:`, treatmentDoses);
+        } catch (e) {
+          console.log(`[Home]   -> Could not parse doses, using empty array`);
+          treatmentDoses = [];
+        }
+
+        // Generate doses based on frequency if no specific doses
+        if (treatmentDoses.length === 0) {
+          const frequency = treatment.frequency || 'once_daily';
+          treatmentDoses = generateDosesForFrequency(frequency, treatment.frequency_value);
+          console.log(`[Home]   -> Generated doses from frequency "${frequency}":`, treatmentDoses);
+        }
+
+        // Get taken logs for today
+        const takenLogs = await db.getAllAsync(
+          'SELECT * FROM treatment_logs WHERE treatment_id = ? AND date = ?',
+          [treatment.id, today]
+        ) as any[];
+        
+        console.log(`[Home] Treatment ${treatment.name}: ${takenLogs.length} logs for today`);
+
+        const takenMap = new Map();
+        takenLogs.forEach(log => {
+          if (log.scheduled_time) {
+            takenMap.set(log.scheduled_time, log.taken === 1);
+          } else if (log.dose_index !== undefined) {
+            takenMap.set(log.dose_index.toString(), log.taken === 1);
+          }
+        });
+
+        // Create dose entries for today
+        treatmentDoses.forEach((dose, index) => {
+          const doseTime = typeof dose === 'string' ? dose : dose.time;
+          const isTaken = takenMap.get(doseTime) || takenMap.get(index.toString()) || false;
+
+          processedTreatments.push({
+            ...treatment,
+            dose_time: doseTime,
+            dose_index: index,
+            dose_amount: typeof dose === 'object' ? dose.amount : treatment.dosage_amount,
+            dose_unit: typeof dose === 'object' ? dose.unit : treatment.dosage_unit,
+            is_taken: isTaken,
+            dose_notes: typeof dose === 'object' ? dose.notes : null,
+          });
+        });
+      }
+
+      setTodayTreatments(processedTreatments);
+
+      console.log('[Home] Processed treatments:', processedTreatments.length);
+
+      // Get ALL scheduled activities (simpler query for web compatibility)
+      const rawActivities = await db.getAllAsync(
+        `SELECT * FROM scheduled_activities WHERE is_active = 1`,
+        []
+      ) as any[];
+
+      console.log('[Home] All active scheduled activities:', rawActivities.length);
+
+      // Get activity types for enrichment
+      const activityTypes = await db.getAllAsync(
+        `SELECT * FROM activity_types`,
+        []
+      ) as any[];
+
+      // Filter activities valid for today and enrich with type info
+      const allActivities = rawActivities.filter(sa => {
+        // Check date range
+        const hasStartDate = sa.start_date && sa.start_date !== '';
+        const hasEndDate = sa.end_date && sa.end_date !== '';
+        
+        if (!hasStartDate) return true;
+        if (sa.start_date > today) return false;
+        if (hasEndDate && sa.end_date < today) return false;
+        
+        return true;
+      }).map(sa => {
+        // Enrich with activity type info
+        const activityType = activityTypes.find((at: any) => at.id === sa.activity_type_id);
+        return {
+          ...sa,
+          activity_name: activityType?.name || sa.name,
+          icon: activityType?.icon || 'fitness',
+          color: activityType?.color || '#FF9800',
+        };
+      });
+
+      console.log('[Home] Activities valid for today:', allActivities.length);
+
+      // Filter activities based on frequency
+      const filteredActivities: any[] = [];
+
+      for (const activity of allActivities) {
+        let shouldInclude = false;
+
+        console.log(`[Home] Checking activity "${activity.name}", frequency: ${activity.frequency_type}, value: ${activity.frequency_value}`);
+
+        switch (activity.frequency_type) {
+          case 'daily':
+            shouldInclude = true;
+            console.log(`[Home]   -> Daily: included`);
+            break;
+
+          case 'weekly':
+            try {
+              const frequencyValue = activity.frequency_value 
+                ? (typeof activity.frequency_value === 'string' && activity.frequency_value.startsWith('[') 
+                    ? JSON.parse(activity.frequency_value) 
+                    : [activity.frequency_value])
+                : [];
+              shouldInclude = frequencyValue.includes(todayDayName);
+              console.log(`[Home]   -> Weekly: ${frequencyValue} includes ${todayDayName}? ${shouldInclude}`);
+            } catch (e) {
+              console.log(`[Home]   -> Weekly: parse error`, e);
+              shouldInclude = false;
+            }
+            break;
+
+          case 'specific_days':
+            try {
+              const frequencyValue = activity.frequency_value 
+                ? (typeof activity.frequency_value === 'string' && activity.frequency_value.startsWith('[') 
+                    ? JSON.parse(activity.frequency_value) 
+                    : activity.frequency_value.split(',').map((s: string) => s.trim()))
+                : [];
+              shouldInclude = frequencyValue.includes(todayDayName);
+              console.log(`[Home]   -> Specific days: ${frequencyValue} includes ${todayDayName}? ${shouldInclude}`);
+            } catch (e) {
+              console.log(`[Home]   -> Specific days: parse error`, e);
+              shouldInclude = false;
+            }
+            break;
+
+          case 'interval':
+            try {
+              const intervalDays = parseInt(activity.frequency_value) || 1;
+              const startDate = new Date(activity.start_date + 'T12:00:00');
+              const todayDate = new Date(today + 'T12:00:00');
+              const diffTime = Math.abs(todayDate.getTime() - startDate.getTime());
+              const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+              shouldInclude = diffDays % intervalDays === 0;
+              console.log(`[Home]   -> Interval: every ${intervalDays} days, diff=${diffDays}, included? ${shouldInclude}`);
+            } catch (e) {
+              console.log(`[Home]   -> Interval: error`, e);
+              shouldInclude = false;
+            }
+            break;
+
+          case 'monthly':
+            try {
+              const dayOfMonth = parseInt(activity.frequency_value) || 1;
+              const todayDate = new Date(today + 'T12:00:00');
+              shouldInclude = todayDate.getDate() === dayOfMonth;
+              console.log(`[Home]   -> Monthly: day ${dayOfMonth}, today is ${todayDate.getDate()}, included? ${shouldInclude}`);
+            } catch (e) {
+              console.log(`[Home]   -> Monthly: error`, e);
+              shouldInclude = false;
+            }
+            break;
+
+          default:
+            // If no frequency_type, include it (legacy data)
+            shouldInclude = true;
+            console.log(`[Home]   -> Unknown frequency type, including by default`);
+        }
+
+        if (shouldInclude) {
+          // Check if already completed today
+          const activityLogs = await db.getAllAsync(
+            'SELECT * FROM activity_logs WHERE scheduled_activity_id = ? AND date = ?',
+            [activity.id, today]
+          ) as any[];
+
+          filteredActivities.push({
+            ...activity,
+            completed_count: activityLogs.length,
+          });
+        }
+      }
+
+      console.log('[Home] Filtered activities for today:', filteredActivities.length);
+      setTodayActivities(filteredActivities);
+    } catch (error) {
+      console.error('Error loading today treatments and activities:', error);
+    }
+  };
+
+  // Helper function to generate doses based on frequency
+  const generateDosesForFrequency = (frequency: string, frequencyValue?: string): any[] => {
+    switch (frequency) {
+      case 'once_daily':
+        return ['08:00'];
+      case 'twice_daily':
+        return ['08:00', '20:00'];
+      case 'three_times_daily':
+        return ['08:00', '14:00', '20:00'];
+      case 'four_times_daily':
+        return ['08:00', '12:00', '16:00', '20:00'];
+      case 'every_4_hours':
+        return ['06:00', '10:00', '14:00', '18:00', '22:00'];
+      case 'every_6_hours':
+        return ['06:00', '12:00', '18:00', '00:00'];
+      case 'every_8_hours':
+        return ['06:00', '14:00', '22:00'];
+      case 'every_12_hours':
+        return ['08:00', '20:00'];
+      case 'as_needed':
+        return ['sin horario'];
+      default:
+        return ['08:00'];
+    }
+  };
+
+  const handleMarkDose = async (treatment: any, taken: boolean) => {
+    try {
+      const db = await getDatabase();
+      const today = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+      // Check if already logged for this specific dose
+      const existing = await db.getFirstAsync(
+        'SELECT id FROM treatment_logs WHERE treatment_id = ? AND date = ? AND scheduled_time = ?',
+        [treatment.id, today, treatment.dose_time]
+      ) as any;
+
+      if (existing) {
+        // Update existing log
+        await db.runAsync(
+          'UPDATE treatment_logs SET taken = ?, time = ?, amount_taken = ?, unit = ? WHERE id = ?',
+          [taken ? 1 : 0, timeStr, treatment.dose_amount, treatment.dose_unit, existing.id]
+        );
+      } else {
+        // Create new log entry
+        await db.runAsync(
+          'INSERT INTO treatment_logs (treatment_id, treatment_name, scheduled_time, dose_index, date, time, taken, skipped, amount_taken, unit) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [
+            treatment.id,
+            treatment.name,
+            treatment.dose_time,
+            treatment.dose_index,
+            today,
+            timeStr,
+            taken ? 1 : 0,
+            taken ? 0 : 1,
+            treatment.dose_amount,
+            treatment.dose_unit
+          ]
+        );
+      }
+
+      await loadTodayTreatmentsAndActivities();
+    } catch (error) {
+      console.error('Error marking dose:', error);
+      Alert.alert('Error', 'No se pudo registrar la dosis');
+    }
+  };
+
+  const handleMarkActivity = async (activity: any, completed: boolean) => {
+    try {
+      const db = await getDatabase();
+      const today = new Date().toISOString().split('T')[0];
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+
+      if (completed) {
+        // Check if already logged today
+        const existing = await db.getFirstAsync(
+          'SELECT id FROM activity_logs WHERE scheduled_activity_id = ? AND date = ?',
+          [activity.id, today]
+        ) as any;
+
+        if (!existing) {
+          // Log the activity
+          await db.runAsync(
+            'INSERT INTO activity_logs (activity_type_id, duration_minutes, intensity, date, time, scheduled_activity_id) VALUES (?, ?, ?, ?, ?, ?)',
+            [activity.activity_type_id, activity.duration_minutes || 30, 5, today, timeStr, activity.id]
+          );
+        }
+      } else {
+        // Remove the log
+        await db.runAsync(
+          'DELETE FROM activity_logs WHERE scheduled_activity_id = ? AND date = ?',
+          [activity.id, today]
+        );
+      }
+
+      await loadTodayTreatmentsAndActivities();
+      await loadRecentActivity();
+    } catch (error) {
+      console.error('Error marking activity:', error);
+      Alert.alert('Error', 'No se pudo registrar la actividad');
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
     await loadData();
@@ -269,13 +709,17 @@ export default function HomeScreen() {
       const birthDate = editBirthDate || null;
       const gender = editGender || null;
       const heightCm = editHeight ? parseFloat(editHeight) : null;
+      const targetCalories = editTargetCalories ? parseInt(editTargetCalories) : null;
+      const targetProtein = editTargetProtein ? parseInt(editTargetProtein) : null;
+      const targetCarbs = editTargetCarbs ? parseInt(editTargetCarbs) : null;
+      const targetFat = editTargetFat ? parseInt(editTargetFat) : null;
       
-      console.log('[Home] Saving profile:', { birthDate, gender, heightCm });
+      console.log('[Home] Saving profile:', { birthDate, gender, heightCm, targetCalories });
       
       // Always try to update first, then insert if no changes
       const updateResult = await db.runAsync(
-        `UPDATE user_profile SET birth_date = ?, gender = ?, height_cm = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`,
-        [birthDate, gender, heightCm]
+        `UPDATE user_profile SET birth_date = ?, gender = ?, height_cm = ?, target_calories = ?, target_protein_pct = ?, target_carbs_pct = ?, target_fat_pct = ?, updated_at = CURRENT_TIMESTAMP WHERE id = 1`,
+        [birthDate, gender, heightCm, targetCalories, targetProtein, targetCarbs, targetFat]
       );
       
       console.log('[Home] Update result:', updateResult);
@@ -283,8 +727,8 @@ export default function HomeScreen() {
       // If no rows updated, insert
       if (!profile) {
         await db.runAsync(
-          `INSERT INTO user_profile (id, birth_date, gender, height_cm) VALUES (1, ?, ?, ?)`,
-          [birthDate, gender, heightCm]
+          `INSERT INTO user_profile (id, birth_date, gender, height_cm, target_calories, target_protein_pct, target_carbs_pct, target_fat_pct) VALUES (1, ?, ?, ?, ?, ?, ?, ?)`,
+          [birthDate, gender, heightCm, targetCalories, targetProtein, targetCarbs, targetFat]
         );
         console.log('[Home] Inserted new profile');
       }
@@ -406,6 +850,791 @@ export default function HomeScreen() {
       />
     </Pressable>
   );
+
+  // Daily Nutrition Card Component - Gamified
+  const DailyNutritionCard = ({ 
+    colors, 
+    consumed, 
+    targets 
+  }: { 
+    colors: any; 
+    consumed: { calories: number; protein: number; carbs: number; fat: number };
+    targets: { calories: number; protein_pct: number; carbs_pct: number; fat_pct: number };
+  }) => {
+    const targetMacros = calculateMacroGrams(targets.calories, targets.protein_pct, targets.carbs_pct, targets.fat_pct);
+    const calorieProgress = Math.min(consumed.calories / targets.calories, 1.5);
+    const caloriePercent = Math.round((consumed.calories / targets.calories) * 100);
+    
+    const macros = [
+      { 
+        label: 'Proteína', 
+        consumed: consumed.protein, 
+        target: targetMacros.protein_g, 
+        color: '#E91E63',
+        icon: 'fish' as keyof typeof Ionicons.glyphMap,
+      },
+      { 
+        label: 'Carbos', 
+        consumed: consumed.carbs, 
+        target: targetMacros.carbs_g, 
+        color: '#FF9800',
+        icon: 'leaf' as keyof typeof Ionicons.glyphMap,
+      },
+      { 
+        label: 'Grasas', 
+        consumed: consumed.fat, 
+        target: targetMacros.fat_g, 
+        color: '#2196F3',
+        icon: 'water' as keyof typeof Ionicons.glyphMap,
+      },
+    ];
+    
+    const isOverCalories = consumed.calories > targets.calories;
+    const calorieColor = isOverCalories ? '#E91E63' : '#4CAF50';
+    
+    return (
+      <Card style={{ marginBottom: 16, padding: 0, overflow: 'hidden' }}>
+        {/* Header */}
+        <View style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: 16,
+          paddingBottom: 12,
+          borderBottomWidth: 1,
+          borderBottomColor: colors.border,
+        }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              backgroundColor: '#4CAF50' + '20',
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}>
+              <Ionicons name="flame" size={18} color="#4CAF50" />
+            </View>
+            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+              Balance del día
+            </Text>
+          </View>
+          <View style={{
+            backgroundColor: calorieColor + '15',
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            borderRadius: 12,
+          }}>
+            <Text style={{ fontSize: 12, fontWeight: '700', color: calorieColor }}>
+              {caloriePercent}%
+            </Text>
+          </View>
+        </View>
+        
+        {/* Calories Section */}
+        <View style={{ padding: 16, paddingTop: 20 }}>
+          {/* Big calorie display */}
+          <View style={{ alignItems: 'center', marginBottom: 20 }}>
+            <Text style={{ fontSize: 11, color: colors.textMuted, letterSpacing: 1, marginBottom: 6 }}>
+              CALORÍAS CONSUMIDAS
+            </Text>
+            <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+              <Text style={{ 
+                fontSize: 48, 
+                fontWeight: '800', 
+                color: calorieColor,
+              }}>
+                {consumed.calories}
+              </Text>
+              <Text style={{ fontSize: 18, color: colors.textSecondary, marginLeft: 4 }}>
+                / {targets.calories}
+              </Text>
+            </View>
+            <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 4 }}>
+              {isOverCalories 
+                ? `${consumed.calories - targets.calories} kcal sobre el objetivo`
+                : `${targets.calories - consumed.calories} kcal restantes`
+              }
+            </Text>
+          </View>
+          
+          {/* Calorie Progress Bar */}
+          <View style={{ marginBottom: 24 }}>
+            <View style={{
+              height: 12,
+              backgroundColor: colors.cardElevated,
+              borderRadius: 6,
+              overflow: 'hidden',
+            }}>
+              <View 
+                style={{
+                  width: `${Math.min(calorieProgress * 100, 100)}%`,
+                  height: '100%',
+                  backgroundColor: calorieColor,
+                  borderRadius: 6,
+                }}
+              />
+              {/* Target marker */}
+              <View style={{
+                position: 'absolute',
+                left: '66.67%', // 100% marker at 2/3
+                top: 0,
+                bottom: 0,
+                width: 2,
+                backgroundColor: colors.text + '30',
+              }} />
+            </View>
+          </View>
+          
+          {/* Macros Grid */}
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            {macros.map((macro) => {
+              const progress = macro.target > 0 ? Math.min(macro.consumed / macro.target, 1) : 0;
+              const percent = Math.round(progress * 100);
+              
+              return (
+                <View 
+                  key={macro.label}
+                  style={{
+                    flex: 1,
+                    backgroundColor: macro.color + '10',
+                    borderRadius: 14,
+                    padding: 14,
+                    alignItems: 'center',
+                  }}
+                >
+                  <View style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: macro.color + '25',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginBottom: 8,
+                  }}>
+                    <Ionicons name={macro.icon} size={16} color={macro.color} />
+                  </View>
+                  <Text style={{ fontSize: 10, color: colors.textMuted, marginBottom: 4 }}>
+                    {macro.label.toUpperCase()}
+                  </Text>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: macro.color }}>
+                    {macro.consumed}g
+                  </Text>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 2 }}>
+                    / {macro.target}g
+                  </Text>
+                  
+                  {/* Mini progress bar */}
+                  <View style={{
+                    width: '100%',
+                    height: 4,
+                    backgroundColor: macro.color + '20',
+                    borderRadius: 2,
+                    marginTop: 8,
+                    overflow: 'hidden',
+                  }}>
+                    <View style={{
+                      width: `${percent}%`,
+                      height: '100%',
+                      backgroundColor: macro.color,
+                      borderRadius: 2,
+                    }} />
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      </Card>
+    );
+  };
+
+  // Today's Treatments Card - Enhanced Gamified Design
+  const TodayTreatmentsCard = ({
+    colors,
+    treatments,
+    onMarkDose,
+    onNavigate,
+  }: {
+    colors: any;
+    treatments: any[];
+    onMarkDose: (treatment: any, taken: boolean) => void;
+    onNavigate: () => void;
+  }) => {
+    const totalDoses = treatments.length;
+    const takenDoses = treatments.filter(t => t.is_taken).length;
+    const progress = totalDoses > 0 ? takenDoses / totalDoses : 0;
+    const allComplete = totalDoses > 0 && takenDoses === totalDoses;
+
+    const treatmentColor = colors.treatment;
+
+    // Group treatments by name to show per-treatment progress
+    const groupedTreatments = treatments.reduce((acc, treatment) => {
+      const key = treatment.name;
+      if (!acc[key]) {
+        acc[key] = {
+          ...treatment,
+          doses: []
+        };
+      }
+      acc[key].doses.push(treatment);
+      return acc;
+    }, {} as any);
+
+    const treatmentList = Object.values(groupedTreatments);
+    
+    return (
+      <Card style={{
+        marginBottom: 16,
+        padding: 0,
+        overflow: 'hidden',
+        borderWidth: allComplete ? 2 : 1,
+        borderColor: allComplete ? colors.fodmapLow : colors.border,
+        backgroundColor: allComplete ? colors.fodmapLow + '05' : colors.card,
+      }}>
+        {/* Header */}
+        <Pressable
+          onPress={onNavigate}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: 16,
+            backgroundColor: allComplete ? colors.fodmapLow + '15' : treatmentColor + '10',
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            {/* Progress Indicator */}
+            <View style={{
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              backgroundColor: colors.card,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 3,
+              borderColor: allComplete ? colors.fodmapLow : treatmentColor,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.1,
+              shadowRadius: 4,
+              elevation: 3,
+            }}>
+              {allComplete ? (
+                <Ionicons name="checkmark-circle" size={32} color={colors.fodmapLow} />
+              ) : totalDoses === 0 ? (
+                <Ionicons name="medkit-outline" size={24} color={colors.textMuted} />
+              ) : (
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: '900', color: treatmentColor }}>
+                    {takenDoses}
+                  </Text>
+                  <Text style={{ fontSize: 10, color: colors.textMuted, marginTop: -2 }}>
+                    /{totalDoses}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>
+                💊 Medicación de Hoy
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
+                {allComplete
+                  ? '¡Todas las dosis tomadas!'
+                  : totalDoses === 0
+                  ? 'Sin tratamientos programados'
+                  : `${takenDoses} de ${totalDoses} dosis tomadas`}
+              </Text>
+            </View>
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {totalDoses > 0 && !allComplete && (
+              <View style={{
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                borderRadius: 12,
+                backgroundColor: treatmentColor,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.2,
+                shadowRadius: 2,
+                elevation: 2,
+              }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }}>
+                  {Math.round(progress * 100)}%
+                </Text>
+              </View>
+            )}
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </View>
+        </Pressable>
+
+        {/* Progress Bar */}
+        {totalDoses > 0 && (
+          <View style={{
+            height: 6,
+            backgroundColor: colors.cardElevated,
+            marginHorizontal: 16,
+            marginBottom: 16,
+            borderRadius: 3,
+            overflow: 'hidden',
+          }}>
+            <View style={{
+              width: `${progress * 100}%`,
+              height: '100%',
+              backgroundColor: allComplete ? colors.fodmapLow : treatmentColor,
+              borderRadius: 3,
+            }} />
+          </View>
+        )}
+
+        {/* Treatments List - Grouped by treatment name */}
+        {totalDoses > 0 && !allComplete && (
+          <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 12 }}>
+            {treatmentList.map((treatment: any) => (
+              <View key={treatment.name} style={{
+                backgroundColor: colors.cardElevated,
+                borderRadius: 16,
+                padding: 16,
+                borderWidth: 1,
+                borderColor: colors.border,
+              }}>
+                {/* Treatment Header */}
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 12,
+                }}>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.text }}>
+                    {treatment.name}
+                  </Text>
+                  <View style={{
+                    paddingHorizontal: 8,
+                    paddingVertical: 4,
+                    borderRadius: 10,
+                    backgroundColor: treatmentColor + '15',
+                  }}>
+                    <Text style={{ fontSize: 11, fontWeight: '600', color: treatmentColor }}>
+                      {treatment.doses.filter((d: any) => d.is_taken).length}/{treatment.doses.length}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Doses */}
+                <View style={{ gap: 8 }}>
+                  {treatment.doses.map((dose: any, index: number) => (
+                    <Pressable
+                      key={`${dose.dose_time}-${index}`}
+                      onPress={() => onMarkDose(dose, !dose.is_taken)}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        padding: 10,
+                        backgroundColor: dose.is_taken
+                          ? colors.fodmapLow + '12'
+                          : colors.background,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: dose.is_taken ? colors.fodmapLow + '40' : colors.border + '40',
+                      }}
+                    >
+                      {/* Checkbox */}
+                      <View style={{
+                        width: 24,
+                        height: 24,
+                        borderRadius: 12,
+                        backgroundColor: dose.is_taken ? colors.fodmapLow : colors.background,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        borderWidth: dose.is_taken ? 0 : 2,
+                        borderColor: colors.border,
+                        marginRight: 12,
+                      }}>
+                        {dose.is_taken && (
+                          <Ionicons name="checkmark" size={16} color="#FFFFFF" />
+                        )}
+                      </View>
+
+                      {/* Dose Info */}
+                      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <View style={{
+                            flexDirection: 'row',
+                            alignItems: 'center',
+                            backgroundColor: treatmentColor + '15',
+                            paddingHorizontal: 6,
+                            paddingVertical: 2,
+                            borderRadius: 6,
+                            gap: 3,
+                          }}>
+                            <Ionicons name="time" size={10} color={treatmentColor} />
+                            <Text style={{ fontSize: 11, fontWeight: '600', color: treatmentColor }}>
+                              {dose.dose_time === 'sin horario' ? 'Cualquier hora' : dose.dose_time}
+                            </Text>
+                          </View>
+                          {dose.dose_amount && (
+                            <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                              {dose.dose_amount} {dose.dose_unit || ''}
+                            </Text>
+                          )}
+                        </View>
+
+                        {!dose.is_taken && (
+                          <View style={{
+                            paddingHorizontal: 8,
+                            paddingVertical: 4,
+                            backgroundColor: treatmentColor,
+                            borderRadius: 8,
+                          }}>
+                            <Text style={{ fontSize: 10, fontWeight: '700', color: '#FFFFFF' }}>
+                              TOMAR
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Empty State */}
+        {totalDoses === 0 && (
+          <Pressable
+            onPress={onNavigate}
+            style={{
+              padding: 24,
+              alignItems: 'center',
+              backgroundColor: colors.cardElevated + '30',
+            }}
+          >
+            <View style={{
+              width: 48,
+              height: 48,
+              borderRadius: 24,
+              backgroundColor: colors.cardElevated,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 12,
+            }}>
+              <Ionicons name="medkit-outline" size={24} color={colors.textMuted} />
+            </View>
+            <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginBottom: 4 }}>
+              No tienes tratamientos programados para hoy
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>
+              Configurar medicación →
+            </Text>
+          </Pressable>
+        )}
+
+        {/* Celebration */}
+        {allComplete && totalDoses > 0 && (
+          <View style={{
+            padding: 20,
+            alignItems: 'center',
+            backgroundColor: colors.fodmapLow + '15',
+          }}>
+            <Text style={{ fontSize: 28, marginBottom: 8 }}>🎉</Text>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: colors.fodmapLow, marginBottom: 4 }}>
+              ¡Todas las dosis tomadas!
+            </Text>
+            <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
+              Excelente trabajo cuidando tu salud. ¡Sigue así! 💪
+            </Text>
+          </View>
+        )}
+      </Card>
+    );
+  };
+
+  // Today's Activities Card - Gamified Design
+  // Today's Activities Card - Enhanced Gamified Design
+  const TodayActivitiesCard = ({
+    colors,
+    activities,
+    onMarkComplete,
+    onNavigate,
+  }: {
+    colors: any;
+    activities: any[];
+    onMarkComplete: (activity: any, completed: boolean) => void;
+    onNavigate: () => void;
+  }) => {
+    const totalActivities = activities.length;
+    const completedActivities = activities.filter(a => a.completed_count > 0).length;
+    const progress = totalActivities > 0 ? completedActivities / totalActivities : 0;
+    const allComplete = totalActivities > 0 && completedActivities === totalActivities;
+    
+    return (
+      <Card style={{
+        marginBottom: 16,
+        padding: 0,
+        overflow: 'hidden',
+        borderWidth: allComplete ? 2 : 1,
+        borderColor: allComplete ? colors.fodmapLow : colors.border,
+        backgroundColor: allComplete ? colors.fodmapLow + '05' : colors.card,
+      }}>
+        {/* Header */}
+        <Pressable
+          onPress={onNavigate}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: 16,
+            backgroundColor: allComplete ? colors.fodmapLow + '15' : ACTIVITY_COLOR + '10',
+          }}
+        >
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+            {/* Progress Indicator */}
+            <View style={{
+              width: 56,
+              height: 56,
+              borderRadius: 28,
+              backgroundColor: colors.card,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderWidth: 3,
+              borderColor: allComplete ? colors.fodmapLow : ACTIVITY_COLOR,
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.1,
+              shadowRadius: 4,
+              elevation: 3,
+            }}>
+              {allComplete ? (
+                <Ionicons name="trophy" size={28} color={colors.fodmapLow} />
+              ) : totalActivities === 0 ? (
+                <Ionicons name="fitness-outline" size={24} color={colors.textMuted} />
+              ) : (
+                <View style={{ alignItems: 'center' }}>
+                  <Text style={{ fontSize: 18, fontWeight: '900', color: ACTIVITY_COLOR }}>
+                    {completedActivities}
+                  </Text>
+                  <Text style={{ fontSize: 10, color: colors.textMuted, marginTop: -2 }}>
+                    /{totalActivities}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>
+                🏃 Entrenamiento
+              </Text>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 1 }}>
+                {allComplete
+                  ? '¡Todas las actividades completadas!'
+                  : totalActivities === 0
+                  ? 'Sin actividades programadas'
+                  : `${completedActivities} de ${totalActivities} completadas`}
+              </Text>
+            </View>
+          </View>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+            {totalActivities > 0 && !allComplete && (
+              <View style={{
+                paddingHorizontal: 10,
+                paddingVertical: 4,
+                borderRadius: 12,
+                backgroundColor: ACTIVITY_COLOR,
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.2,
+                shadowRadius: 2,
+                elevation: 2,
+              }}>
+                <Text style={{ fontSize: 11, fontWeight: '700', color: '#FFFFFF' }}>
+                  {Math.round(progress * 100)}%
+                </Text>
+              </View>
+            )}
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </View>
+        </Pressable>
+
+        {/* Progress Bar */}
+        {totalActivities > 0 && (
+          <View style={{
+            height: 6,
+            backgroundColor: colors.cardElevated,
+            marginHorizontal: 16,
+            marginBottom: 16,
+            borderRadius: 3,
+            overflow: 'hidden',
+          }}>
+            <View style={{
+              width: `${progress * 100}%`,
+              height: '100%',
+              backgroundColor: allComplete ? colors.fodmapLow : ACTIVITY_COLOR,
+              borderRadius: 3,
+            }} />
+          </View>
+        )}
+
+        {/* Activities List */}
+        {totalActivities > 0 && !allComplete && (
+          <View style={{ paddingHorizontal: 16, paddingBottom: 16, gap: 12 }}>
+            {activities.map((activity) => {
+              const isCompleted = activity.completed_count > 0;
+              const actColor = activity.color || ACTIVITY_COLOR;
+
+              return (
+                <Pressable
+                  key={activity.id}
+                  onPress={() => onMarkComplete(activity, !isCompleted)}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    padding: 16,
+                    backgroundColor: isCompleted
+                      ? colors.fodmapLow + '12'
+                      : colors.cardElevated,
+                    borderRadius: 16,
+                    borderWidth: 1,
+                    borderColor: isCompleted ? colors.fodmapLow + '40' : colors.border,
+                  }}
+                >
+                  {/* Activity Icon */}
+                  <View style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 14,
+                    backgroundColor: isCompleted ? colors.fodmapLow + '20' : actColor + '20',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    marginRight: 14,
+                    borderWidth: 2,
+                    borderColor: isCompleted ? colors.fodmapLow + '40' : 'transparent',
+                  }}>
+                    {isCompleted ? (
+                      <Ionicons name="checkmark-circle" size={26} color={colors.fodmapLow} />
+                    ) : (
+                      <Ionicons name={(activity.icon || 'fitness') as any} size={24} color={actColor} />
+                    )}
+                  </View>
+
+                  {/* Activity Info */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{
+                      fontSize: 15,
+                      fontWeight: '700',
+                      color: isCompleted ? colors.textMuted : colors.text,
+                      textDecorationLine: isCompleted ? 'line-through' : 'none',
+                    }}>
+                      {activity.name || activity.activity_name}
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 6 }}>
+                      <View style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        backgroundColor: actColor + '15',
+                        paddingHorizontal: 8,
+                        paddingVertical: 4,
+                        borderRadius: 8,
+                        gap: 4,
+                      }}>
+                        <Ionicons name="stopwatch" size={12} color={actColor} />
+                        <Text style={{ fontSize: 12, fontWeight: '600', color: actColor }}>
+                          {activity.duration_minutes} min
+                        </Text>
+                      </View>
+                      {activity.reminder_time && (
+                        <View style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 4,
+                        }}>
+                          <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+                          <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                            {activity.reminder_time}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  {/* Action Button */}
+                  {!isCompleted && (
+                    <View style={{
+                      paddingHorizontal: 16,
+                      paddingVertical: 8,
+                      backgroundColor: actColor,
+                      borderRadius: 12,
+                      shadowColor: '#000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.1,
+                      shadowRadius: 2,
+                      elevation: 2,
+                    }}>
+                      <Text style={{ fontSize: 12, fontWeight: '700', color: '#FFFFFF' }}>
+                        ✓ Hecho
+                      </Text>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Empty State */}
+        {totalActivities === 0 && (
+          <Pressable
+            onPress={onNavigate}
+            style={{
+              padding: 24,
+              alignItems: 'center',
+              backgroundColor: colors.cardElevated + '30',
+            }}
+          >
+            <View style={{
+              width: 48,
+              height: 48,
+              borderRadius: 24,
+              backgroundColor: colors.cardElevated,
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: 12,
+            }}>
+              <Ionicons name="fitness-outline" size={24} color={colors.textMuted} />
+            </View>
+            <Text style={{ fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginBottom: 4 }}>
+              No tienes actividades programadas para hoy
+            </Text>
+            <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '600' }}>
+              Programar entrenamiento →
+            </Text>
+          </Pressable>
+        )}
+
+        {/* Celebration */}
+        {allComplete && totalActivities > 0 && (
+          <View style={{
+            padding: 20,
+            alignItems: 'center',
+            backgroundColor: colors.fodmapLow + '15',
+          }}>
+            <Text style={{ fontSize: 28, marginBottom: 8 }}>🏆</Text>
+            <Text style={{ fontSize: 16, fontWeight: '800', color: colors.fodmapLow, marginBottom: 4 }}>
+              ¡Entrenamiento completado!
+            </Text>
+            <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
+              ¡Felicitaciones! Has completado todas tus actividades del día. 💪
+            </Text>
+          </View>
+        )}
+      </Card>
+    );
+  };
 
   return (
     <>
@@ -743,26 +1972,42 @@ export default function HomeScreen() {
           </Card>
         </Animated.View>
 
-        {/* Quick Actions - Activities & Treatments */}
-        <Animated.View 
-          entering={FadeInDown.delay(250).springify()}
-          style={{ flexDirection: 'row', gap: 12, marginBottom: 20 }}
-        >
-          <QuickActionCard
-            icon="fitness"
-            title="Actividades"
-            subtitle={scheduledActivities > 0 ? `${scheduledActivities} programada${scheduledActivities > 1 ? 's' : ''}` : 'Configura rutinas'}
-            color={ACTIVITY_COLOR}
-            count={scheduledActivities}
-            onPress={() => router.push('/activity/')}
+        {/* Daily Nutrition Summary - Gamified */}
+        <Animated.View entering={FadeInDown.delay(200).springify()}>
+          <DailyNutritionCard
+            colors={colors}
+            consumed={{
+              calories: todayCalories,
+              protein: todayMacros.protein,
+              carbs: todayMacros.carbs,
+              fat: todayMacros.fat,
+            }}
+            targets={{
+              calories: profile?.target_calories || 2000,
+              protein_pct: profile?.target_protein_pct || 20,
+              carbs_pct: profile?.target_carbs_pct || 50,
+              fat_pct: profile?.target_fat_pct || 30,
+            }}
           />
-          <QuickActionCard
-            icon="medkit"
-            title="Tratamientos"
-            subtitle={activeTreatments > 0 ? `${activeTreatments} activo${activeTreatments > 1 ? 's' : ''}` : 'Gestiona medicación'}
-            color={colors.treatment}
-            count={activeTreatments}
-            onPress={() => router.push('/treatment/')}
+        </Animated.View>
+
+        {/* Today's Treatments - Enhanced Gamified Card */}
+        <Animated.View entering={FadeInDown.delay(250).springify()}>
+          <TodayTreatmentsCard
+            colors={colors}
+            treatments={todayTreatments}
+            onMarkDose={handleMarkDose}
+            onNavigate={() => router.push('/treatment' as any)}
+          />
+        </Animated.View>
+
+        {/* Today's Activities - Enhanced Gamified Card */}
+        <Animated.View entering={FadeInDown.delay(300).springify()}>
+          <TodayActivitiesCard
+            colors={colors}
+            activities={todayActivities}
+            onMarkComplete={handleMarkActivity}
+            onNavigate={() => router.push('/activity' as any)}
           />
         </Animated.View>
 
@@ -991,6 +2236,160 @@ export default function HomeScreen() {
                       textAlign: 'center',
                     }}
                   />
+                </View>
+
+                {/* Nutrition Targets Section */}
+                <View style={{ 
+                  backgroundColor: colors.cardElevated, 
+                  borderRadius: 16, 
+                  padding: 16,
+                  marginTop: 8,
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                    <Ionicons name="flame" size={20} color="#4CAF50" />
+                    <Text style={{ fontSize: 16, fontWeight: '700', color: colors.text }}>
+                      Objetivos Nutricionales
+                    </Text>
+                  </View>
+                  
+                  {/* Target Calories */}
+                  <View style={{ marginBottom: 16 }}>
+                    <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 6 }}>
+                      Calorías diarias objetivo
+                    </Text>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <TextInput
+                        value={editTargetCalories}
+                        onChangeText={setEditTargetCalories}
+                        placeholder="2000"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="numeric"
+                        style={{
+                          flex: 1,
+                          fontSize: 18,
+                          fontWeight: '600',
+                          color: colors.text,
+                          padding: 12,
+                          backgroundColor: colors.background,
+                          borderRadius: 10,
+                          textAlign: 'center',
+                        }}
+                      />
+                      <Text style={{ fontSize: 14, color: colors.textMuted }}>kcal</Text>
+                    </View>
+                  </View>
+
+                  {/* Macronutrients */}
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 10 }}>
+                    Macronutrientes (% de calorías)
+                  </Text>
+                  <View style={{ flexDirection: 'row', gap: 10 }}>
+                    {/* Protein */}
+                    <View style={{ flex: 1, alignItems: 'center' }}>
+                      <View style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 18,
+                        backgroundColor: '#E91E63' + '20',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginBottom: 6,
+                      }}>
+                        <Ionicons name="fish" size={16} color="#E91E63" />
+                      </View>
+                      <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>Proteína</Text>
+                      <TextInput
+                        value={editTargetProtein}
+                        onChangeText={setEditTargetProtein}
+                        placeholder="20"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="numeric"
+                        style={{
+                          width: '100%',
+                          fontSize: 16,
+                          fontWeight: '600',
+                          color: '#E91E63',
+                          padding: 8,
+                          backgroundColor: colors.background,
+                          borderRadius: 8,
+                          textAlign: 'center',
+                        }}
+                      />
+                      <Text style={{ fontSize: 10, color: colors.textMuted, marginTop: 2 }}>%</Text>
+                    </View>
+                    
+                    {/* Carbs */}
+                    <View style={{ flex: 1, alignItems: 'center' }}>
+                      <View style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 18,
+                        backgroundColor: '#FF9800' + '20',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginBottom: 6,
+                      }}>
+                        <Ionicons name="leaf" size={16} color="#FF9800" />
+                      </View>
+                      <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>Carbos</Text>
+                      <TextInput
+                        value={editTargetCarbs}
+                        onChangeText={setEditTargetCarbs}
+                        placeholder="50"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="numeric"
+                        style={{
+                          width: '100%',
+                          fontSize: 16,
+                          fontWeight: '600',
+                          color: '#FF9800',
+                          padding: 8,
+                          backgroundColor: colors.background,
+                          borderRadius: 8,
+                          textAlign: 'center',
+                        }}
+                      />
+                      <Text style={{ fontSize: 10, color: colors.textMuted, marginTop: 2 }}>%</Text>
+                    </View>
+                    
+                    {/* Fat */}
+                    <View style={{ flex: 1, alignItems: 'center' }}>
+                      <View style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 18,
+                        backgroundColor: '#2196F3' + '20',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        marginBottom: 6,
+                      }}>
+                        <Ionicons name="water" size={16} color="#2196F3" />
+                      </View>
+                      <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>Grasas</Text>
+                      <TextInput
+                        value={editTargetFat}
+                        onChangeText={setEditTargetFat}
+                        placeholder="30"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="numeric"
+                        style={{
+                          width: '100%',
+                          fontSize: 16,
+                          fontWeight: '600',
+                          color: '#2196F3',
+                          padding: 8,
+                          backgroundColor: colors.background,
+                          borderRadius: 8,
+                          textAlign: 'center',
+                        }}
+                      />
+                      <Text style={{ fontSize: 10, color: colors.textMuted, marginTop: 2 }}>%</Text>
+                    </View>
+                  </View>
+                  
+                  <Text style={{ fontSize: 11, color: colors.textMuted, textAlign: 'center', marginTop: 12 }}>
+                    Tip: Los macros deben sumar aproximadamente 100%
+                  </Text>
                 </View>
 
                 {/* Save Button */}

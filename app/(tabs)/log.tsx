@@ -27,6 +27,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import Animated, {
@@ -34,6 +35,17 @@ import Animated, {
 } from 'react-native-reanimated';
 
 type LogType = 'water' | 'symptom' | 'bowel' | 'treatment' | 'activity';
+type LogCategory = 'meals' | 'water' | 'activity' | 'symptoms' | 'bowel' | 'treatments';
+
+// Category tabs configuration
+const LOG_CATEGORIES: { key: LogCategory; label: string; icon: keyof typeof Ionicons.glyphMap; color: string }[] = [
+  { key: 'meals', label: 'Comidas', icon: 'restaurant', color: '#4CAF50' },
+  { key: 'water', label: 'Agua', icon: 'water', color: '#2196F3' },
+  { key: 'activity', label: 'Actividad', icon: 'fitness', color: '#FF9800' },
+  { key: 'symptoms', label: 'Síntomas', icon: 'pulse', color: '#E91E63' },
+  { key: 'bowel', label: 'Deposiciones', icon: 'medical', color: '#795548' },
+  { key: 'treatments', label: 'Medicación', icon: 'medkit', color: '#9C27B0' },
+];
 
 // Meal types order for display with icons based on time of day
 const MEAL_TYPES_ORDER: MealType[] = ['breakfast', 'lunch', 'dinner', 'snack', 'other'];
@@ -112,6 +124,9 @@ export default function LogScreen() {
   
   // Expanded meal sections
   const [expandedMeals, setExpandedMeals] = useState<Set<MealType>>(new Set());
+  
+  // Selected category tab
+  const [selectedCategory, setSelectedCategory] = useState<LogCategory>('meals');
 
   const activityColor = '#FF9800';
   const today = new Date().toISOString().split('T')[0];
@@ -585,27 +600,74 @@ export default function LogScreen() {
                   }}>
                     {item.name}
                   </Text>
-                  {item.food_id && (
+                  {item.quantity && item.unit && (
                     <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>
                       {item.quantity} {item.unit}
                     </Text>
                   )}
                 </View>
                 
-                {/* Calories and arrow */}
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                  {item.calories && item.calories > 0 && (
+                {/* Calories and edit icon */}
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  {item.calories !== undefined && item.calories > 0 && (
                     <Text style={{ fontSize: 13, color: colors.textSecondary, fontWeight: '500' }}>
                       {Math.round(item.calories)} kcal
                     </Text>
                   )}
-                  <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+                  <View style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 14,
+                    backgroundColor: colors.primary + '15',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <Ionicons name="pencil" size={14} color={colors.primary} />
+                  </View>
                 </View>
               </Pressable>
             ))}
           </View>
         )}
       </View>
+    );
+  };
+
+  // Meals Grid Component for multi-column on wide screens
+  const MealsGrid = () => {
+    const { width } = useWindowDimensions();
+    const isWideScreen = width >= 768;
+    
+    if (isWideScreen) {
+      // 2-column layout for tablets/wide screens
+      const leftColumn = MEAL_TYPES_ORDER.filter((_, i) => i % 2 === 0);
+      const rightColumn = MEAL_TYPES_ORDER.filter((_, i) => i % 2 === 1);
+      
+      return (
+        <Animated.View entering={FadeInDown.springify()}>
+          <View style={{ flexDirection: 'row', gap: 16 }}>
+            <View style={{ flex: 1 }}>
+              {leftColumn.map((mealType) => (
+                <MealTypeSection key={mealType} mealType={mealType} />
+              ))}
+            </View>
+            <View style={{ flex: 1 }}>
+              {rightColumn.map((mealType) => (
+                <MealTypeSection key={mealType} mealType={mealType} />
+              ))}
+            </View>
+          </View>
+        </Animated.View>
+      );
+    }
+    
+    // Single column for mobile
+    return (
+      <Animated.View entering={FadeInDown.springify()}>
+        {MEAL_TYPES_ORDER.map((mealType) => (
+          <MealTypeSection key={mealType} mealType={mealType} />
+        ))}
+      </Animated.View>
     );
   };
 
@@ -646,13 +708,14 @@ export default function LogScreen() {
   return (
     <>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        {/* Date Navigation Header */}
+        {/* Custom Header with Date Navigation */}
         <View style={{ 
           flexDirection: 'row', 
           alignItems: 'center', 
           justifyContent: 'space-between',
-          paddingHorizontal: 16,
-          paddingVertical: 12,
+          paddingHorizontal: 12,
+          paddingTop: 12,
+          paddingBottom: 8,
           backgroundColor: colors.surface,
           borderBottomWidth: 1,
           borderBottomColor: colors.border,
@@ -661,9 +724,9 @@ export default function LogScreen() {
             onPress={() => navigateDay(-1)}
             activeOpacity={0.7}
             style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
+              width: 38,
+              height: 38,
+              borderRadius: 19,
               backgroundColor: colors.card,
               alignItems: 'center',
               justifyContent: 'center',
@@ -678,52 +741,127 @@ export default function LogScreen() {
             style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
           >
             <Text style={{ 
-              fontSize: 17, 
+              fontSize: 16, 
               fontWeight: '700', 
               color: colors.text,
             }}>
               {formatSelectedDate()}
             </Text>
-            <Ionicons name="calendar-outline" size={18} color={colors.primary} />
-          </TouchableOpacity>
-
-          <TouchableOpacity 
-            onPress={() => navigateDay(1)}
-            activeOpacity={0.7}
-            style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
-              backgroundColor: colors.card,
+            <View style={{
+              width: 30,
+              height: 30,
+              borderRadius: 15,
+              backgroundColor: colors.primary + '15',
               alignItems: 'center',
               justifyContent: 'center',
-            }}
-          >
-            <Ionicons name="chevron-forward" size={20} color={colors.text} />
+            }}>
+              <Ionicons name="calendar" size={16} color={colors.primary} />
+            </View>
           </TouchableOpacity>
+
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            {selectedDate !== today && (
+              <TouchableOpacity 
+                onPress={goToToday}
+                activeOpacity={0.7}
+                style={{
+                  paddingHorizontal: 10,
+                  paddingVertical: 6,
+                  borderRadius: 14,
+                  backgroundColor: colors.primary,
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '600', color: '#FFFFFF' }}>Hoy</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity 
+              onPress={() => navigateDay(1)}
+              activeOpacity={0.7}
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 19,
+                backgroundColor: colors.card,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <Ionicons name="chevron-forward" size={20} color={colors.text} />
+            </TouchableOpacity>
+          </View>
         </View>
 
-        {/* Go to Today Button (if not today) */}
-        {selectedDate !== today && (
-          <Pressable
-            onPress={goToToday}
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 6,
-              paddingVertical: 10,
-              backgroundColor: colors.primary + '15',
-            }}
+        {/* Category Tabs */}
+        <View style={{ backgroundColor: colors.surface, paddingTop: 8, paddingBottom: 12 }}>
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
           >
-            <Ionicons name="today" size={16} color={colors.primary} />
-            <Text style={{ fontSize: 13, fontWeight: '600', color: colors.primary }}>
-              Ir a Hoy
-            </Text>
-          </Pressable>
-        )}
+            {LOG_CATEGORIES.map((cat) => {
+              const isSelected = selectedCategory === cat.key;
+              const count = cat.key === 'meals' 
+                ? dayDetails?.meals.reduce((acc, m) => acc + m.items.length, 0) || 0
+                : cat.key === 'water' ? getTotalWater()
+                : cat.key === 'activity' ? dayDetails?.activities.length || 0
+                : cat.key === 'symptoms' ? dayDetails?.symptoms.length || 0
+                : cat.key === 'bowel' ? dayDetails?.bowelMovements.length || 0
+                : dayDetails?.treatments.length || 0;
+              
+              return (
+                <Pressable
+                  key={cat.key}
+                  onPress={() => setSelectedCategory(cat.key)}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                    paddingHorizontal: 14,
+                    paddingVertical: 10,
+                    borderRadius: 20,
+                    backgroundColor: isSelected ? cat.color : colors.card,
+                    borderWidth: 1,
+                    borderColor: isSelected ? cat.color : colors.border,
+                  }}
+                >
+                  <Ionicons 
+                    name={cat.icon} 
+                    size={16} 
+                    color={isSelected ? '#FFFFFF' : cat.color} 
+                  />
+                  <Text style={{ 
+                    fontSize: 13, 
+                    fontWeight: '600', 
+                    color: isSelected ? '#FFFFFF' : colors.text,
+                  }}>
+                    {cat.label}
+                  </Text>
+                  {count > 0 && (
+                    <View style={{
+                      minWidth: 20,
+                      height: 20,
+                      borderRadius: 10,
+                      backgroundColor: isSelected ? 'rgba(255,255,255,0.3)' : cat.color + '20',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      paddingHorizontal: 6,
+                    }}>
+                      <Text style={{ 
+                        fontSize: 11, 
+                        fontWeight: '700', 
+                        color: isSelected ? '#FFFFFF' : cat.color,
+                      }}>
+                        {count}
+                      </Text>
+                    </View>
+                  )}
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+        </View>
 
-        {/* Day Content */}
+        {/* Category Content */}
         {loading ? (
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
             <ActivityIndicator size="large" color={colors.primary} />
@@ -734,262 +872,435 @@ export default function LogScreen() {
             contentContainerStyle={{ padding: 16, paddingBottom: 32 }}
             showsVerticalScrollIndicator={false}
           >
-            {/* Meals Section - By Type */}
-            <Animated.View entering={FadeInDown.delay(100).springify()}>
-              <View style={{ 
-                flexDirection: 'row', 
-                alignItems: 'center', 
-                gap: 10,
-                marginBottom: 12,
-                marginTop: 8,
-              }}>
+            {/* Meals Category - Multi-column on wide screens */}
+            {selectedCategory === 'meals' && (
+              <MealsGrid />
+            )}
+
+            {/* Water Category */}
+            {selectedCategory === 'water' && (
+              <Animated.View entering={FadeInDown.springify()}>
                 <View style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 10,
-                  backgroundColor: colors.primary + '20',
+                  flexDirection: 'row',
                   alignItems: 'center',
-                  justifyContent: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 16,
                 }}>
-                  <Ionicons name="restaurant" size={16} color={colors.primary} />
-                </View>
-                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
-                  Comidas
-                </Text>
-              </View>
-              
-              <Card style={{ padding: 12, marginBottom: 16 }}>
-                {MEAL_TYPES_ORDER.map((mealType) => (
-                  <MealTypeSection key={mealType} mealType={mealType} />
-                ))}
-              </Card>
-            </Animated.View>
-
-            {/* Water Section */}
-            <Animated.View entering={FadeInDown.delay(150).springify()}>
-              <SectionHeader 
-                title="Agua" 
-                icon="water" 
-                color={colors.water}
-                count={getTotalWater()}
-                onAdd={() => setActiveFormType('water')}
-              />
-              <Card style={{ marginBottom: 16 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <Text style={{ fontSize: 13, color: colors.textSecondary }}>
-                    Total del día
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
+                    Consumo de agua
                   </Text>
-                  <Text style={{ fontSize: 20, fontWeight: '700', color: colors.water }}>
-                    {getTotalWater()} {getTotalWater() === 1 ? 'vaso' : 'vasos'}
-                  </Text>
+                  <Pressable
+                    onPress={() => setActiveFormType('water')}
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
+                      backgroundColor: colors.water,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="add" size={22} color="#FFFFFF" />
+                  </Pressable>
                 </View>
-              </Card>
-            </Animated.View>
-
-            {/* Activities Section */}
-            <Animated.View entering={FadeInDown.delay(200).springify()}>
-              <SectionHeader 
-                title="Actividad" 
-                icon="fitness" 
-                color={activityColor}
-                count={dayDetails?.activities.length || 0}
-                onAdd={() => setActiveFormType('activity')}
-              />
-              {dayDetails && dayDetails.activities.length > 0 ? (
-                <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-                  {dayDetails.activities.map((activity: any, index) => (
-                    <View 
-                      key={activity.id}
-                      style={{ 
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        padding: 14,
-                        borderBottomWidth: index < dayDetails.activities.length - 1 ? 1 : 0,
-                        borderBottomColor: colors.border,
-                      }}
-                    >
-                      <View style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 18,
-                        backgroundColor: (activity.color || activityColor) + '20',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        marginRight: 12,
-                      }}>
-                        <Ionicons name={(activity.icon || 'fitness') as any} size={18} color={activity.color || activityColor} />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>
-                          {activity.type_name || 'Actividad'}
-                        </Text>
-                        <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
-                          {activity.time} · {activity.duration_minutes} min
-                        </Text>
-                      </View>
-                      <View style={{
-                        paddingHorizontal: 8,
-                        paddingVertical: 4,
-                        borderRadius: 10,
-                        backgroundColor: activityColor + '20',
-                      }}>
-                        <Text style={{ fontSize: 11, fontWeight: '600', color: activityColor }}>
-                          {activity.intensity}/10
-                        </Text>
-                      </View>
+                
+                <Card style={{ marginBottom: 16, padding: 20 }}>
+                  <View style={{ alignItems: 'center' }}>
+                    <Text style={{ fontSize: 48, fontWeight: '800', color: colors.water }}>
+                      {getTotalWater()}
+                    </Text>
+                    <Text style={{ fontSize: 16, color: colors.textSecondary, marginTop: 4 }}>
+                      {getTotalWater() === 1 ? 'vaso' : 'vasos'} de agua
+                    </Text>
+                    <View style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 8,
+                      marginTop: 12,
+                      paddingHorizontal: 16,
+                      paddingVertical: 8,
+                      backgroundColor: colors.water + '15',
+                      borderRadius: 20,
+                    }}>
+                      <Ionicons name="water" size={18} color={colors.water} />
+                      <Text style={{ fontSize: 14, color: colors.water, fontWeight: '600' }}>
+                        {getTotalWater() * 250} ml
+                      </Text>
                     </View>
-                  ))}
+                  </View>
                 </Card>
-              ) : (
-                <Card style={{ marginBottom: 16 }}>
-                  <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center' }}>
-                    Sin actividades registradas
-                  </Text>
-                </Card>
-              )}
-            </Animated.View>
 
-            {/* Symptoms Section */}
-            <Animated.View entering={FadeInDown.delay(250).springify()}>
-              <SectionHeader 
-                title="Síntomas" 
-                icon="pulse" 
-                color={colors.symptom}
-                count={dayDetails?.symptoms.length || 0}
-                onAdd={() => setActiveFormType('symptom')}
-              />
-              {dayDetails && dayDetails.symptoms.length > 0 ? (
-                <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-                  {dayDetails.symptoms.map((symptom, index) => (
-                    <View 
-                      key={symptom.id}
-                      style={{ 
-                        padding: 14,
-                        borderBottomWidth: index < dayDetails.symptoms.length - 1 ? 1 : 0,
-                        borderBottomColor: colors.border,
-                      }}
-                    >
-                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>
-                          {symptom.type}
+                {dayDetails && dayDetails.water.length > 0 && (
+                  <Card style={{ padding: 0, overflow: 'hidden' }}>
+                    {dayDetails.water.map((w, index) => (
+                      <View 
+                        key={w.id}
+                        style={{ 
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          padding: 14,
+                          borderBottomWidth: index < dayDetails.water.length - 1 ? 1 : 0,
+                          borderBottomColor: colors.border,
+                        }}
+                      >
+                        <Text style={{ fontSize: 16, marginRight: 12 }}>💧</Text>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>
+                            {w.glasses} {w.glasses === 1 ? 'vaso' : 'vasos'}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                            {w.time}
+                          </Text>
+                        </View>
+                        <Text style={{ fontSize: 13, color: colors.water, fontWeight: '500' }}>
+                          {w.amount_ml} ml
                         </Text>
-                        <View style={{ 
-                          paddingHorizontal: 8, 
-                          paddingVertical: 2, 
-                          borderRadius: 10,
-                          backgroundColor: symptom.intensity <= 3 ? colors.fodmapLow + '20' 
-                            : symptom.intensity <= 6 ? colors.fodmapMedium + '20' 
-                            : colors.fodmapHigh + '20',
+                      </View>
+                    ))}
+                  </Card>
+                )}
+              </Animated.View>
+            )}
+
+            {/* Activity Category */}
+            {selectedCategory === 'activity' && (
+              <Animated.View entering={FadeInDown.springify()}>
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 16,
+                }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
+                    Actividad física
+                  </Text>
+                  <Pressable
+                    onPress={() => setActiveFormType('activity')}
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
+                      backgroundColor: activityColor,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="add" size={22} color="#FFFFFF" />
+                  </Pressable>
+                </View>
+                
+                {dayDetails && dayDetails.activities.length > 0 ? (
+                  <Card style={{ padding: 0, overflow: 'hidden' }}>
+                    {dayDetails.activities.map((activity: any, index) => (
+                      <View 
+                        key={activity.id}
+                        style={{ 
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          padding: 14,
+                          borderBottomWidth: index < dayDetails.activities.length - 1 ? 1 : 0,
+                          borderBottomColor: colors.border,
+                        }}
+                      >
+                        <View style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: 22,
+                          backgroundColor: (activity.color || activityColor) + '20',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginRight: 14,
                         }}>
-                          <Text style={{ 
-                            fontSize: 12, 
-                            fontWeight: '600',
-                            color: symptom.intensity <= 3 ? colors.fodmapLow 
-                              : symptom.intensity <= 6 ? colors.fodmapMedium 
-                              : colors.fodmapHigh,
-                          }}>
-                            {symptom.intensity}/10
+                          <Ionicons name={(activity.icon || 'fitness') as any} size={22} color={activity.color || activityColor} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+                            {activity.type_name || 'Actividad'}
+                          </Text>
+                          <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+                            {activity.time} · {activity.duration_minutes} min
+                          </Text>
+                        </View>
+                        <View style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 6,
+                          borderRadius: 12,
+                          backgroundColor: activityColor + '20',
+                        }}>
+                          <Text style={{ fontSize: 12, fontWeight: '700', color: activityColor }}>
+                            {activity.intensity}/10
                           </Text>
                         </View>
                       </View>
-                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
-                        {symptom.time}
-                      </Text>
-                    </View>
-                  ))}
-                </Card>
-              ) : (
-                <Card style={{ marginBottom: 16 }}>
-                  <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center' }}>
-                    Sin síntomas registrados
-                  </Text>
-                </Card>
-              )}
-            </Animated.View>
+                    ))}
+                  </Card>
+                ) : (
+                  <Card style={{ padding: 32, alignItems: 'center' }}>
+                    <Ionicons name="fitness-outline" size={48} color={colors.textMuted} />
+                    <Text style={{ fontSize: 14, color: colors.textMuted, marginTop: 12, textAlign: 'center' }}>
+                      No hay actividades registradas
+                    </Text>
+                  </Card>
+                )}
+              </Animated.View>
+            )}
 
-            {/* Bowel Movements Section */}
-            <Animated.View entering={FadeInDown.delay(300).springify()}>
-              <SectionHeader 
-                title="Deposiciones" 
-                icon="medical" 
-                color={colors.bowel}
-                count={dayDetails?.bowelMovements.length || 0}
-                onAdd={() => setActiveFormType('bowel')}
-              />
-              {dayDetails && dayDetails.bowelMovements.length > 0 ? (
-                <Card style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-                  {dayDetails.bowelMovements.map((bm, index) => (
-                    <View 
-                      key={bm.id}
-                      style={{ 
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        padding: 14,
-                        borderBottomWidth: index < dayDetails.bowelMovements.length - 1 ? 1 : 0,
-                        borderBottomColor: colors.border,
-                      }}
-                    >
-                      <Text style={{ fontSize: 24, marginRight: 12 }}>
-                        {BRISTOL_SCALE[bm.bristol_type as keyof typeof BRISTOL_SCALE]?.emoji || '💩'}
-                      </Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>
-                          {BRISTOL_SCALE[bm.bristol_type as keyof typeof BRISTOL_SCALE]?.name || 'Tipo ' + bm.bristol_type}
-                        </Text>
-                        <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
-                          {bm.time}
-                        </Text>
+            {/* Symptoms Category */}
+            {selectedCategory === 'symptoms' && (
+              <Animated.View entering={FadeInDown.springify()}>
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 16,
+                }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
+                    Síntomas
+                  </Text>
+                  <Pressable
+                    onPress={() => setActiveFormType('symptom')}
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
+                      backgroundColor: colors.symptom,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="add" size={22} color="#FFFFFF" />
+                  </Pressable>
+                </View>
+                
+                {dayDetails && dayDetails.symptoms.length > 0 ? (
+                  <Card style={{ padding: 0, overflow: 'hidden' }}>
+                    {dayDetails.symptoms.map((symptom, index) => (
+                      <View 
+                        key={symptom.id}
+                        style={{ 
+                          padding: 14,
+                          borderBottomWidth: index < dayDetails.symptoms.length - 1 ? 1 : 0,
+                          borderBottomColor: colors.border,
+                        }}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+                              {symptom.type}
+                            </Text>
+                            <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+                              {symptom.time}
+                              {symptom.duration_minutes ? ` · ${symptom.duration_minutes} min` : ''}
+                            </Text>
+                          </View>
+                          <View style={{ 
+                            paddingHorizontal: 12, 
+                            paddingVertical: 6, 
+                            borderRadius: 12,
+                            backgroundColor: symptom.intensity <= 3 ? colors.fodmapLow + '20' 
+                              : symptom.intensity <= 6 ? colors.fodmapMedium + '20' 
+                              : colors.fodmapHigh + '20',
+                          }}>
+                            <Text style={{ 
+                              fontSize: 13, 
+                              fontWeight: '700',
+                              color: symptom.intensity <= 3 ? colors.fodmapLow 
+                                : symptom.intensity <= 6 ? colors.fodmapMedium 
+                                : colors.fodmapHigh,
+                            }}>
+                              {symptom.intensity}/10
+                            </Text>
+                          </View>
+                        </View>
+                        {symptom.notes && (
+                          <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 8 }}>
+                            {symptom.notes}
+                          </Text>
+                        )}
                       </View>
-                    </View>
-                  ))}
-                </Card>
-              ) : (
-                <Card style={{ marginBottom: 16 }}>
-                  <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center' }}>
-                    Sin deposiciones registradas
-                  </Text>
-                </Card>
-              )}
-            </Animated.View>
+                    ))}
+                  </Card>
+                ) : (
+                  <Card style={{ padding: 32, alignItems: 'center' }}>
+                    <Ionicons name="pulse-outline" size={48} color={colors.textMuted} />
+                    <Text style={{ fontSize: 14, color: colors.textMuted, marginTop: 12, textAlign: 'center' }}>
+                      No hay síntomas registrados
+                    </Text>
+                  </Card>
+                )}
+              </Animated.View>
+            )}
 
-            {/* Treatments Section */}
-            <Animated.View entering={FadeInDown.delay(350).springify()}>
-              <SectionHeader 
-                title="Tratamientos" 
-                icon="medkit" 
-                color={colors.treatment}
-                count={dayDetails?.treatments.length || 0}
-                onAdd={() => setActiveFormType('treatment')}
-              />
-              {dayDetails && dayDetails.treatments.length > 0 ? (
-                <Card style={{ padding: 0, overflow: 'hidden' }}>
-                  {dayDetails.treatments.map((treatment, index) => (
-                    <View 
-                      key={treatment.id}
-                      style={{ 
-                        padding: 14,
-                        borderBottomWidth: index < dayDetails.treatments.length - 1 ? 1 : 0,
-                        borderBottomColor: colors.border,
-                      }}
-                    >
-                      <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>
-                        {treatment.treatment_name || treatment.name || 'Tratamiento'}
-                      </Text>
-                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
-                        {treatment.time}
-                        {treatment.dosage_amount ? ` · ${treatment.dosage_amount} ${treatment.dosage_unit || ''}` : ''}
-                      </Text>
-                    </View>
-                  ))}
-                </Card>
-              ) : (
-                <Card>
-                  <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center' }}>
-                    Sin tratamientos registrados
+            {/* Bowel Movements Category */}
+            {selectedCategory === 'bowel' && (
+              <Animated.View entering={FadeInDown.springify()}>
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 16,
+                }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
+                    Deposiciones
                   </Text>
-                </Card>
-              )}
-            </Animated.View>
+                  <Pressable
+                    onPress={() => setActiveFormType('bowel')}
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
+                      backgroundColor: colors.bowel,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="add" size={22} color="#FFFFFF" />
+                  </Pressable>
+                </View>
+                
+                {dayDetails && dayDetails.bowelMovements.length > 0 ? (
+                  <Card style={{ padding: 0, overflow: 'hidden' }}>
+                    {dayDetails.bowelMovements.map((bm, index) => (
+                      <View 
+                        key={bm.id}
+                        style={{ 
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          padding: 14,
+                          borderBottomWidth: index < dayDetails.bowelMovements.length - 1 ? 1 : 0,
+                          borderBottomColor: colors.border,
+                        }}
+                      >
+                        <View style={{
+                          width: 50,
+                          height: 50,
+                          borderRadius: 12,
+                          backgroundColor: colors.bowel + '15',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginRight: 14,
+                        }}>
+                          <Text style={{ fontSize: 28 }}>
+                            {BRISTOL_SCALE[bm.bristol_type as keyof typeof BRISTOL_SCALE]?.emoji || '💩'}
+                          </Text>
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+                            {BRISTOL_SCALE[bm.bristol_type as keyof typeof BRISTOL_SCALE]?.name || 'Tipo ' + bm.bristol_type}
+                          </Text>
+                          <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+                            {bm.time}
+                          </Text>
+                        </View>
+                        <View style={{
+                          paddingHorizontal: 10,
+                          paddingVertical: 4,
+                          borderRadius: 10,
+                          backgroundColor: colors.bowel + '15',
+                        }}>
+                          <Text style={{ fontSize: 12, fontWeight: '600', color: colors.bowel }}>
+                            Tipo {bm.bristol_type}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </Card>
+                ) : (
+                  <Card style={{ padding: 32, alignItems: 'center' }}>
+                    <Ionicons name="medical-outline" size={48} color={colors.textMuted} />
+                    <Text style={{ fontSize: 14, color: colors.textMuted, marginTop: 12, textAlign: 'center' }}>
+                      No hay deposiciones registradas
+                    </Text>
+                  </Card>
+                )}
+              </Animated.View>
+            )}
+
+            {/* Treatments Category */}
+            {selectedCategory === 'treatments' && (
+              <Animated.View entering={FadeInDown.springify()}>
+                <View style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: 16,
+                }}>
+                  <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
+                    Medicación
+                  </Text>
+                  <Pressable
+                    onPress={() => setActiveFormType('treatment')}
+                    style={{
+                      width: 40,
+                      height: 40,
+                      borderRadius: 20,
+                      backgroundColor: colors.treatment,
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    <Ionicons name="add" size={22} color="#FFFFFF" />
+                  </Pressable>
+                </View>
+                
+                {dayDetails && dayDetails.treatments.length > 0 ? (
+                  <Card style={{ padding: 0, overflow: 'hidden' }}>
+                    {dayDetails.treatments.map((treatment, index) => (
+                      <View 
+                        key={treatment.id}
+                        style={{ 
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          padding: 14,
+                          borderBottomWidth: index < dayDetails.treatments.length - 1 ? 1 : 0,
+                          borderBottomColor: colors.border,
+                        }}
+                      >
+                        <View style={{
+                          width: 44,
+                          height: 44,
+                          borderRadius: 22,
+                          backgroundColor: colors.treatment + '20',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          marginRight: 14,
+                        }}>
+                          <Ionicons name="medkit" size={20} color={colors.treatment} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+                            {treatment.treatment_name || treatment.name || 'Tratamiento'}
+                          </Text>
+                          <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
+                            {treatment.time}
+                            {treatment.dosage_amount ? ` · ${treatment.dosage_amount} ${treatment.dosage_unit || ''}` : ''}
+                          </Text>
+                        </View>
+                        {treatment.taken === 1 && (
+                          <View style={{
+                            width: 28,
+                            height: 28,
+                            borderRadius: 14,
+                            backgroundColor: colors.fodmapLow + '20',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}>
+                            <Ionicons name="checkmark" size={16} color={colors.fodmapLow} />
+                          </View>
+                        )}
+                      </View>
+                    ))}
+                  </Card>
+                ) : (
+                  <Card style={{ padding: 32, alignItems: 'center' }}>
+                    <Ionicons name="medkit-outline" size={48} color={colors.textMuted} />
+                    <Text style={{ fontSize: 14, color: colors.textMuted, marginTop: 12, textAlign: 'center' }}>
+                      No hay medicación registrada
+                    </Text>
+                  </Card>
+                )}
+              </Animated.View>
+            )}
           </ScrollView>
         )}
       </View>
@@ -1225,27 +1536,48 @@ interface MealEditorProps {
   onSuccess: () => void;
 }
 
+interface SelectedMealItem {
+  id?: number;
+  food_id?: number;
+  recipe_id?: number;
+  name: string;
+  fodmap_level?: string;
+  quantity: number;
+  unit: string;
+}
+
 function MealEditor({ colors, selectedDate, mealType, existingMeal, onClose, onSuccess }: MealEditorProps) {
   const [notes, setNotes] = useState(existingMeal?.notes || '');
-  const [selectedItems, setSelectedItems] = useState<Array<{
-    id?: number;
-    food_id?: number;
-    recipe_id?: number;
-    name: string;
-    fodmap_level?: string;
-  }>>(existingMeal?.items.map(item => ({
-    id: item.id,
-    food_id: item.food_id || undefined,
-    recipe_id: item.recipe_id || undefined,
-    name: item.name,
-    fodmap_level: item.fodmap_level,
-  })) || []);
+  const [selectedItems, setSelectedItems] = useState<SelectedMealItem[]>(
+    existingMeal?.items.map(item => ({
+      id: item.id,
+      food_id: item.food_id || undefined,
+      recipe_id: item.recipe_id || undefined,
+      name: item.name,
+      fodmap_level: item.fodmap_level,
+      quantity: item.quantity || 1,
+      unit: item.unit || 'porción',
+    })) || []
+  );
   
   const [recipes, setRecipes] = useState<any[]>([]);
   const [foods, setFoods] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [loading, setLoading] = useState(false);
+  
+  // Quantity modal state
+  const [showQuantityModal, setShowQuantityModal] = useState(false);
+  const [pendingItem, setPendingItem] = useState<{ 
+    food_id?: number; 
+    recipe_id?: number; 
+    name: string; 
+    fodmap_level?: string; 
+  } | null>(null);
+  const [pendingQuantity, setPendingQuantity] = useState('1');
+  const [pendingUnit, setPendingUnit] = useState('porción');
+
+  const UNITS = ['g', 'ml', 'porción', 'unidad', 'taza', 'cucharada', 'cucharadita', 'pieza'];
 
   useEffect(() => {
     loadRecipesAndFoods();
@@ -1271,29 +1603,54 @@ function MealEditor({ colors, selectedDate, mealType, existingMeal, onClose, onS
     f.name?.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleAddRecipe = (recipe: any) => {
+  const handleSelectRecipe = (recipe: any) => {
     // Check if already added
     if (selectedItems.some(item => item.recipe_id === recipe.id)) return;
     
-    setSelectedItems([...selectedItems, {
+    // Open quantity modal
+    setPendingItem({
       recipe_id: recipe.id,
       name: recipe.name,
       fodmap_level: recipe.fodmap_level,
-    }]);
+    });
+    setPendingQuantity('1');
+    setPendingUnit('porción');
+    setShowQuantityModal(true);
     setSearchQuery('');
     setShowSearch(false);
   };
 
-  const handleAddFood = (food: any) => {
+  const handleSelectFood = (food: any) => {
     // Check if already added
     if (selectedItems.some(item => item.food_id === food.id)) return;
     
-    setSelectedItems([...selectedItems, {
+    // Open quantity modal
+    setPendingItem({
       food_id: food.id,
       name: food.name,
       fodmap_level: food.fodmap_level,
-    }]);
+    });
+    setPendingQuantity('100');
+    setPendingUnit('g');
+    setShowQuantityModal(true);
     setSearchQuery('');
+    setShowSearch(false);
+  };
+
+  const handleConfirmQuantity = () => {
+    if (!pendingItem) return;
+    
+    const qty = parseFloat(pendingQuantity) || 1;
+    setSelectedItems([...selectedItems, {
+      ...pendingItem,
+      quantity: qty,
+      unit: pendingUnit,
+    }]);
+    
+    setShowQuantityModal(false);
+    setPendingItem(null);
+    setPendingQuantity('1');
+    setPendingUnit('porción');
   };
 
   const handleRemoveItem = (index: number) => {
@@ -1342,15 +1699,15 @@ function MealEditor({ colors, selectedDate, mealType, existingMeal, onClose, onS
         mealId = result.lastInsertRowId;
       }
       
-      // Insert new items
+      // Insert new items with quantity and unit
       for (const item of selectedItems) {
         await insertRow('meal_items', {
           meal_id: mealId,
           food_id: item.food_id || null,
           recipe_id: item.recipe_id || null,
           name: item.name,
-          quantity: 1,
-          unit: 'porción',
+          quantity: item.quantity,
+          unit: item.unit,
         });
       }
       
@@ -1431,7 +1788,7 @@ function MealEditor({ colors, selectedDate, mealType, existingMeal, onClose, onS
                       {filteredRecipes.slice(0, 5).map((recipe) => (
                         <Pressable
                           key={`recipe-${recipe.id}`}
-                          onPress={() => handleAddRecipe(recipe)}
+                          onPress={() => handleSelectRecipe(recipe)}
                           style={{
                             flexDirection: 'row',
                             alignItems: 'center',
@@ -1456,7 +1813,7 @@ function MealEditor({ colors, selectedDate, mealType, existingMeal, onClose, onS
                       {filteredFoods.slice(0, 5).map((food) => (
                         <Pressable
                           key={`food-${food.id}`}
-                          onPress={() => handleAddFood(food)}
+                          onPress={() => handleSelectFood(food)}
                           style={{
                             flexDirection: 'row',
                             alignItems: 'center',
@@ -1510,9 +1867,14 @@ function MealEditor({ colors, selectedDate, mealType, existingMeal, onClose, onS
                       color={getFodmapColor(item.fodmap_level)} 
                       style={{ marginRight: 10 }} 
                     />
-                    <Text style={{ flex: 1, fontSize: 14, color: colors.text }}>
-                      {item.name}
-                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>
+                        {item.name}
+                      </Text>
+                      <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 2 }}>
+                        {item.quantity} {item.unit}
+                      </Text>
+                    </View>
                     <Pressable onPress={() => handleRemoveItem(index)}>
                       <Ionicons name="close-circle" size={22} color={colors.textMuted} />
                     </Pressable>
@@ -1563,6 +1925,153 @@ function MealEditor({ colors, selectedDate, mealType, existingMeal, onClose, onS
           </Button>
         </View>
       </ScrollView>
+
+      {/* Quantity Modal */}
+      <Modal
+        visible={showQuantityModal}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowQuantityModal(false)}
+      >
+        <Pressable 
+          style={{ 
+            flex: 1, 
+            backgroundColor: 'rgba(0,0,0,0.5)', 
+            justifyContent: 'center',
+            alignItems: 'center',
+            padding: 20,
+          }}
+          onPress={() => setShowQuantityModal(false)}
+        >
+          <Pressable 
+            style={{ 
+              backgroundColor: colors.card, 
+              borderRadius: 20,
+              padding: 20,
+              width: '100%',
+              maxWidth: 340,
+            }}
+            onPress={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <View style={{ alignItems: 'center', marginBottom: 20 }}>
+              <View style={{
+                width: 48,
+                height: 48,
+                borderRadius: 12,
+                backgroundColor: getFodmapColor(pendingItem?.fodmap_level) + '20',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 12,
+              }}>
+                <Ionicons 
+                  name={pendingItem?.recipe_id ? 'book' : 'nutrition'} 
+                  size={24} 
+                  color={getFodmapColor(pendingItem?.fodmap_level)} 
+                />
+              </View>
+              <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text, textAlign: 'center' }}>
+                {pendingItem?.name}
+              </Text>
+              <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 4 }}>
+                ¿Qué cantidad has consumido?
+              </Text>
+            </View>
+
+            {/* Quantity Input */}
+            <View style={{ marginBottom: 16 }}>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textMuted, marginBottom: 8 }}>
+                CANTIDAD
+              </Text>
+              <View style={{
+                backgroundColor: colors.cardElevated,
+                borderRadius: 12,
+                padding: 16,
+                alignItems: 'center',
+              }}>
+                <TextInput
+                  value={pendingQuantity}
+                  onChangeText={setPendingQuantity}
+                  placeholder="1"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="decimal-pad"
+                  style={{
+                    fontSize: 32,
+                    fontWeight: '700',
+                    color: colors.text,
+                    textAlign: 'center',
+                    minWidth: 100,
+                  }}
+                />
+              </View>
+            </View>
+
+            {/* Unit Selection */}
+            <View style={{ marginBottom: 20 }}>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textMuted, marginBottom: 8 }}>
+                UNIDAD
+              </Text>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {UNITS.map((u) => (
+                  <Pressable
+                    key={u}
+                    onPress={() => setPendingUnit(u)}
+                    style={{
+                      paddingHorizontal: 14,
+                      paddingVertical: 8,
+                      borderRadius: 16,
+                      backgroundColor: pendingUnit === u ? colors.primary : colors.cardElevated,
+                    }}
+                  >
+                    <Text style={{ 
+                      fontSize: 13, 
+                      fontWeight: '500', 
+                      color: pendingUnit === u ? '#FFFFFF' : colors.textSecondary 
+                    }}>
+                      {u}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {/* Actions */}
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <Pressable
+                onPress={() => {
+                  setShowQuantityModal(false);
+                  setPendingItem(null);
+                }}
+                style={{
+                  flex: 1,
+                  paddingVertical: 14,
+                  borderRadius: 12,
+                  backgroundColor: colors.cardElevated,
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+                  Cancelar
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={handleConfirmQuantity}
+                style={{
+                  flex: 1,
+                  paddingVertical: 14,
+                  borderRadius: 12,
+                  backgroundColor: colors.primary,
+                  alignItems: 'center',
+                }}
+              >
+                <Text style={{ fontSize: 15, fontWeight: '600', color: '#FFFFFF' }}>
+                  Añadir
+                </Text>
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </>
   );
 }

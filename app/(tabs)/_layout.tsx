@@ -90,6 +90,7 @@ export default function TabLayout() {
         name="log"
         options={{
           title: 'Diario',
+          headerShown: false, // Custom header in log.tsx
           tabBarIcon: ({ color, focused }) => (
             <TabIcon name={focused ? 'today' : 'today-outline'} color={color} focused={focused} />
           ),

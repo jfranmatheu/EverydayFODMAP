@@ -651,8 +651,72 @@ export interface UserProfile {
   birth_date: string | null; // ISO date string YYYY-MM-DD
   gender: Gender | null;
   height_cm: number | null;
+  // Target nutrition
+  target_calories: number | null;
+  target_protein_pct: number | null; // Percentage of daily calories
+  target_carbs_pct: number | null;
+  target_fat_pct: number | null;
+  // Optional detailed targets
+  target_fiber_g: number | null;
+  target_sugars_g: number | null;
+  target_sodium_mg: number | null;
+  target_potassium_mg: number | null;
+  target_saturated_fat_g: number | null;
+  target_cholesterol_mg: number | null;
   created_at: string;
   updated_at: string;
+}
+
+// Macro targets as absolute grams (computed from percentages and calories)
+export interface MacroTargets {
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+}
+
+// Calculate macro grams from percentages
+export function calculateMacroGrams(
+  calories: number,
+  protein_pct: number,
+  carbs_pct: number,
+  fat_pct: number
+): MacroTargets {
+  // Protein: 4 cal/g, Carbs: 4 cal/g, Fat: 9 cal/g
+  return {
+    calories,
+    protein_g: Math.round((calories * (protein_pct / 100)) / 4),
+    carbs_g: Math.round((calories * (carbs_pct / 100)) / 4),
+    fat_g: Math.round((calories * (fat_pct / 100)) / 9),
+  };
+}
+
+// Calculate recommended daily calories (Harris-Benedict equation)
+export function calculateDailyCalories(
+  weightKg: number,
+  heightCm: number,
+  ageYears: number,
+  gender: Gender,
+  activityLevel: 'sedentary' | 'light' | 'moderate' | 'active' | 'very_active' = 'moderate'
+): number {
+  // BMR calculation
+  let bmr: number;
+  if (gender === 'male') {
+    bmr = 88.362 + (13.397 * weightKg) + (4.799 * heightCm) - (5.677 * ageYears);
+  } else {
+    bmr = 447.593 + (9.247 * weightKg) + (3.098 * heightCm) - (4.330 * ageYears);
+  }
+  
+  // Activity multiplier
+  const multipliers = {
+    sedentary: 1.2,
+    light: 1.375,
+    moderate: 1.55,
+    active: 1.725,
+    very_active: 1.9,
+  };
+  
+  return Math.round(bmr * multipliers[activityLevel]);
 }
 
 export interface WeightLog {
