@@ -1907,125 +1907,10 @@ export default function HomeScreen() {
                   </Pressable>
                 </View>
 
-                {/* BMI Card - ALWAYS SHOW IF POSSIBLE */}
-                {bmi !== null && bmiInfo ? (
-                  <Animated.View 
-                    entering={FadeInUp.delay(200).springify()}
-                    style={{
-                      backgroundColor: bmiInfo.color + '12',
-                      borderRadius: 16,
-                      padding: 16,
-                      borderWidth: 2,
-                      borderColor: bmiInfo.color + '40',
-                    }}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <View>
-                        <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 4, fontWeight: '500' }}>
-                          Índice de Masa Corporal (IMC)
-                        </Text>
-                        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
-                          <Text style={{ 
-                            fontSize: 40, 
-                            fontWeight: '800', 
-                            color: bmiInfo.color,
-                          }}>
-                            {bmi.toFixed(1)}
-                          </Text>
-                          <Text style={{ fontSize: 16, color: colors.textSecondary, fontWeight: '500' }}>
-                            kg/m²
-                          </Text>
-                        </View>
-                      </View>
-                      
-                      <View style={{
-                        paddingHorizontal: 16,
-                        paddingVertical: 10,
-                        borderRadius: 24,
-                        backgroundColor: bmiInfo.color,
-                      }}>
-                        <Text style={{ 
-                          fontSize: 14, 
-                          fontWeight: '700', 
-                          color: '#FFFFFF',
-                        }}>
-                          {bmiInfo.label}
-                        </Text>
-                      </View>
-                    </View>
-                    
-                    {/* BMI Scale Visualization */}
-                    <View style={{ marginTop: 20 }}>
-                      <View style={{ 
-                        flexDirection: 'row', 
-                        height: 10, 
-                        borderRadius: 5,
-                        overflow: 'hidden',
-                      }}>
-                        <View style={{ flex: 1, backgroundColor: BMI_CATEGORIES.underweight.color }} />
-                        <View style={{ flex: 1.5, backgroundColor: BMI_CATEGORIES.normal.color }} />
-                        <View style={{ flex: 1, backgroundColor: BMI_CATEGORIES.overweight.color }} />
-                        <View style={{ flex: 1.5, backgroundColor: BMI_CATEGORIES.obese.color }} />
-                      </View>
-                      {/* Indicator */}
-                      <View style={{ 
-                        position: 'absolute',
-                        top: -2,
-                        left: `${Math.min(Math.max((bmi - 15) / 25 * 100, 2), 98)}%`,
-                        marginLeft: -8,
-                      }}>
-                        <View style={{
-                          width: 16,
-                          height: 16,
-                          borderRadius: 8,
-                          backgroundColor: '#FFFFFF',
-                          borderWidth: 3,
-                          borderColor: bmiInfo.color,
-                          shadowColor: '#000',
-                          shadowOffset: { width: 0, height: 2 },
-                          shadowOpacity: 0.25,
-                          shadowRadius: 3,
-                          elevation: 4,
-                        }} />
-                      </View>
-                    </View>
-                    
-                    <View style={{ 
-                      flexDirection: 'row', 
-                      justifyContent: 'space-between',
-                      marginTop: 8,
-                      paddingHorizontal: 4,
-                    }}>
-                      <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>15</Text>
-                      <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>18.5</Text>
-                      <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>25</Text>
-                      <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>30</Text>
-                      <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>40</Text>
-                    </View>
-                  </Animated.View>
-                ) : (
-                  // Prompt to add data for BMI
-                  <View style={{
-                    backgroundColor: colors.cardElevated,
-                    borderRadius: 12,
-                    padding: 16,
-                    alignItems: 'center',
-                  }}>
-                    <Ionicons name="analytics-outline" size={24} color={colors.textMuted} style={{ marginBottom: 8 }} />
-                    <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
-                      {!profile?.height_cm && !latestWeight 
-                        ? 'Añade tu altura y peso para calcular tu IMC'
-                        : !profile?.height_cm 
-                        ? 'Añade tu altura para calcular tu IMC'
-                        : 'Añade tu peso para calcular tu IMC'}
-                    </Text>
-                  </View>
-                )}
-
                 {/* Weight Timeline - Line Chart */}
                 {weightHistory.length > 1 && (
                   <View style={{
-                    marginTop: 16,
+                    marginBottom: 16,
                     backgroundColor: colors.cardElevated,
                     borderRadius: 12,
                     padding: 14,
@@ -2212,6 +2097,122 @@ export default function HomeScreen() {
                       }
                       return null;
                     })()}
+                  </View>
+                )}
+
+
+                {/* BMI Card - ALWAYS SHOW IF POSSIBLE */}
+                {bmi !== null && bmiInfo ? (
+                  <Animated.View 
+                    entering={FadeInUp.delay(200).springify()}
+                    style={{
+                      backgroundColor: bmiInfo.color + '12',
+                      borderRadius: 16,
+                      padding: 16,
+                      borderWidth: 2,
+                      borderColor: bmiInfo.color + '40',
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <View>
+                        <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 4, fontWeight: '500' }}>
+                          Índice de Masa Corporal (IMC)
+                        </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8 }}>
+                          <Text style={{ 
+                            fontSize: 40, 
+                            fontWeight: '800', 
+                            color: bmiInfo.color,
+                          }}>
+                            {bmi.toFixed(1)}
+                          </Text>
+                          <Text style={{ fontSize: 16, color: colors.textSecondary, fontWeight: '500' }}>
+                            kg/m²
+                          </Text>
+                        </View>
+                      </View>
+                      
+                      <View style={{
+                        paddingHorizontal: 16,
+                        paddingVertical: 10,
+                        borderRadius: 24,
+                        backgroundColor: bmiInfo.color,
+                      }}>
+                        <Text style={{ 
+                          fontSize: 14, 
+                          fontWeight: '700', 
+                          color: '#FFFFFF',
+                        }}>
+                          {bmiInfo.label}
+                        </Text>
+                      </View>
+                    </View>
+                    
+                    {/* BMI Scale Visualization */}
+                    <View style={{ marginTop: 20 }}>
+                      <View style={{ 
+                        flexDirection: 'row', 
+                        height: 10, 
+                        borderRadius: 5,
+                        overflow: 'hidden',
+                      }}>
+                        <View style={{ flex: 1, backgroundColor: BMI_CATEGORIES.underweight.color }} />
+                        <View style={{ flex: 1.5, backgroundColor: BMI_CATEGORIES.normal.color }} />
+                        <View style={{ flex: 1, backgroundColor: BMI_CATEGORIES.overweight.color }} />
+                        <View style={{ flex: 1.5, backgroundColor: BMI_CATEGORIES.obese.color }} />
+                      </View>
+                      {/* Indicator */}
+                      <View style={{ 
+                        position: 'absolute',
+                        top: -2,
+                        left: `${Math.min(Math.max((bmi - 15) / 25 * 100, 2), 98)}%`,
+                        marginLeft: -8,
+                      }}>
+                        <View style={{
+                          width: 16,
+                          height: 16,
+                          borderRadius: 8,
+                          backgroundColor: '#FFFFFF',
+                          borderWidth: 3,
+                          borderColor: bmiInfo.color,
+                          shadowColor: '#000',
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.25,
+                          shadowRadius: 3,
+                          elevation: 4,
+                        }} />
+                      </View>
+                    </View>
+                    
+                    <View style={{ 
+                      flexDirection: 'row', 
+                      justifyContent: 'space-between',
+                      marginTop: 8,
+                      paddingHorizontal: 4,
+                    }}>
+                      <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>15</Text>
+                      <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>18.5</Text>
+                      <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>25</Text>
+                      <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>30</Text>
+                      <Text style={{ fontSize: 10, color: colors.textMuted, fontWeight: '500' }}>40</Text>
+                    </View>
+                  </Animated.View>
+                ) : (
+                  // Prompt to add data for BMI
+                  <View style={{
+                    backgroundColor: colors.cardElevated,
+                    borderRadius: 12,
+                    padding: 16,
+                    alignItems: 'center',
+                  }}>
+                    <Ionicons name="analytics-outline" size={24} color={colors.textMuted} style={{ marginBottom: 8 }} />
+                    <Text style={{ fontSize: 13, color: colors.textSecondary, textAlign: 'center' }}>
+                      {!profile?.height_cm && !latestWeight 
+                        ? 'Añade tu altura y peso para calcular tu IMC'
+                        : !profile?.height_cm 
+                        ? 'Añade tu altura para calcular tu IMC'
+                        : 'Añade tu peso para calcular tu IMC'}
+                    </Text>
                   </View>
                 )}
               </View>
@@ -2403,6 +2404,64 @@ export default function HomeScreen() {
                       </Pressable>
                     </View>
 
+                    {/* Weight Timeline */}
+                    {weightHistory.length > 1 && (
+                      <View style={{
+                        marginBottom: 16,
+                        backgroundColor: colors.cardElevated,
+                        borderRadius: 12,
+                        padding: 14,
+                      }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
+                          <Ionicons name="trending-up" size={16} color={colors.primary} style={{ marginRight: 6 }} />
+                          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
+                            Historial de peso
+                          </Text>
+                          <Text style={{ fontSize: 11, color: colors.textMuted, marginLeft: 'auto' }}>
+                            {weightHistory.length} registros
+                          </Text>
+                        </View>
+                        
+                        {/* Mini Chart */}
+                        <View style={{ height: 50, flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
+                          {(() => {
+                            const weights = weightHistory.map(w => w.weight_kg);
+                            const minW = Math.min(...weights) - 1;
+                            const maxW = Math.max(...weights) + 1;
+                            const range = maxW - minW || 1;
+                            const displayHistory = weightHistory.slice(-15);
+                            
+                            return displayHistory.map((entry, index) => {
+                              const height = ((entry.weight_kg - minW) / range) * 40 + 10;
+                              const isLatest = index === displayHistory.length - 1;
+                              
+                              return (
+                                <View
+                                  key={entry.id || index}
+                                  style={{
+                                    flex: 1,
+                                    height,
+                                    backgroundColor: isLatest ? colors.primary : colors.primary + '50',
+                                    borderRadius: 3,
+                                  }}
+                                />
+                              );
+                            });
+                          })()}
+                        </View>
+                        
+                        {/* Weight range labels */}
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
+                          <Text style={{ fontSize: 10, color: colors.textMuted }}>
+                            Min: {Math.min(...weightHistory.map(w => w.weight_kg)).toFixed(1)} kg
+                          </Text>
+                          <Text style={{ fontSize: 10, color: colors.textMuted }}>
+                            Max: {Math.max(...weightHistory.map(w => w.weight_kg)).toFixed(1)} kg
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+
                     {/* BMI Card */}
                     {bmi !== null && bmiInfo ? (
                       <Animated.View 
@@ -2514,64 +2573,6 @@ export default function HomeScreen() {
                             ? 'Añade tu altura para calcular tu IMC'
                             : 'Añade tu peso para calcular tu IMC'}
                         </Text>
-                      </View>
-                    )}
-
-                    {/* Weight Timeline */}
-                    {weightHistory.length > 1 && (
-                      <View style={{
-                        marginTop: 16,
-                        backgroundColor: colors.cardElevated,
-                        borderRadius: 12,
-                        padding: 14,
-                      }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 12 }}>
-                          <Ionicons name="trending-up" size={16} color={colors.primary} style={{ marginRight: 6 }} />
-                          <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
-                            Historial de peso
-                          </Text>
-                          <Text style={{ fontSize: 11, color: colors.textMuted, marginLeft: 'auto' }}>
-                            {weightHistory.length} registros
-                          </Text>
-                        </View>
-                        
-                        {/* Mini Chart */}
-                        <View style={{ height: 50, flexDirection: 'row', alignItems: 'flex-end', gap: 2 }}>
-                          {(() => {
-                            const weights = weightHistory.map(w => w.weight_kg);
-                            const minW = Math.min(...weights) - 1;
-                            const maxW = Math.max(...weights) + 1;
-                            const range = maxW - minW || 1;
-                            const displayHistory = weightHistory.slice(-15);
-                            
-                            return displayHistory.map((entry, index) => {
-                              const height = ((entry.weight_kg - minW) / range) * 40 + 10;
-                              const isLatest = index === displayHistory.length - 1;
-                              
-                              return (
-                                <View
-                                  key={entry.id || index}
-                                  style={{
-                                    flex: 1,
-                                    height,
-                                    backgroundColor: isLatest ? colors.primary : colors.primary + '50',
-                                    borderRadius: 3,
-                                  }}
-                                />
-                              );
-                            });
-                          })()}
-                        </View>
-                        
-                        {/* Weight range labels */}
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 }}>
-                          <Text style={{ fontSize: 10, color: colors.textMuted }}>
-                            Min: {Math.min(...weightHistory.map(w => w.weight_kg)).toFixed(1)} kg
-                          </Text>
-                          <Text style={{ fontSize: 10, color: colors.textMuted }}>
-                            Max: {Math.max(...weightHistory.map(w => w.weight_kg)).toFixed(1)} kg
-                          </Text>
-                        </View>
                       </View>
                     )}
                   </View>
