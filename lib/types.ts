@@ -194,6 +194,7 @@ export interface Food {
   // Metadata
   notes?: string;
   tags?: string[];
+  digestive_effect?: number; // -2 to 2: -2 bad for diarrhea, 0 neutral, 2 bad for constipation
   folder_id?: number;
   is_favorite?: boolean;
   

@@ -25,6 +25,8 @@
     "calcium_mg": 36,
     "iron_mg": 0.9,
     "vitamin_c_mg": 9.2
-  }
+  },
+  "tags": ["Vegano", "Sin gluten", "Bajo en grasa"],
+  "digestive_effect": 0
 }
 

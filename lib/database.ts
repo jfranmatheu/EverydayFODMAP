@@ -721,6 +721,8 @@ async function loadInternalDataWeb(): Promise<void> {
       nutrition: food.nutrition ? JSON.stringify(food.nutrition) : null,
       serving_size: food.serving_size,
       notes: food.notes,
+      tags: (food as any).tags ? JSON.stringify((food as any).tags) : null,
+      digestive_effect: (food as any).digestive_effect !== undefined ? (food as any).digestive_effect : 0,
       source: 'internal',
       source_id: food.id, // Original ID from JSON (e.g., "zanahoria")
       is_compound: false,
@@ -890,7 +892,8 @@ export async function initDatabase(): Promise<void> {
       barcode TEXT,
       image_uri TEXT,
       notes TEXT,
-      tags TEXT, -- JSON array
+      tags TEXT, -- JSON array of tag strings
+      digestive_effect INTEGER CHECK(digestive_effect BETWEEN -2 AND 2) DEFAULT 0, -- -2: bad for diarrhea, 0: neutral, 2: bad for constipation
       folder_id INTEGER REFERENCES folders(id) ON DELETE SET NULL,
       is_favorite INTEGER DEFAULT 0,
       source TEXT CHECK(source IN ('user', 'internal', 'external')) DEFAULT 'user',

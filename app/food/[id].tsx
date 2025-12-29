@@ -2,29 +2,30 @@ import { Button, Card, FODMAPBadge, ImagePickerButton } from '@/components/ui';
 import { useTheme } from '@/contexts/ThemeContext';
 import { deleteRow, getDatabase, getRowById, insertRow, updateRow } from '@/lib/database';
 import {
-    FODMAPDetails,
-    FODMAPLevel,
-    Food,
-    FOOD_CATEGORIES,
-    FoodCategory,
-    NutriScore,
-    NUTRISCORE_COLORS,
-    NutritionInfo
+  FODMAPDetails,
+  FODMAPLevel,
+  Food,
+  FOOD_CATEGORIES,
+  FoodCategory,
+  NutriScore,
+  NUTRISCORE_COLORS,
+  NutritionInfo
 } from '@/lib/types';
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
-    Alert,
-    Modal,
-    Platform,
-    Pressable,
-    ScrollView,
-    Switch,
-    Text,
-    TextInput,
-    View,
-    useWindowDimensions
+  Alert,
+  Image,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  Switch,
+  Text,
+  TextInput,
+  useWindowDimensions,
+  View
 } from 'react-native';
 import Animated, { FadeInDown, FadeInRight, Layout } from 'react-native-reanimated';
 
@@ -48,7 +49,7 @@ export default function FoodScreen() {
   // Basic info
   const [name, setName] = useState('');
   const [category, setCategory] = useState<FoodCategory>('other');
-  const [servingSize, setServingSize] = useState('');
+  const [servingSize, setServingSize] = useState('100');
   const [servingUnit, setServingUnit] = useState('g');
   const [notes, setNotes] = useState('');
   const [brand, setBrand] = useState('');
@@ -72,8 +73,18 @@ export default function FoodScreen() {
   const [nutrition, setNutrition] = useState<Partial<NutritionInfo>>({});
   const [nutriScore, setNutriScore] = useState<NutriScore>(null);
   
-  // Compound food
-  const [isCompound, setIsCompound] = useState(false);
+  // Tags and digestive effect
+  const [tags, setTags] = useState<string[]>([]);
+  const [digestiveEffect, setDigestiveEffect] = useState<number>(0);
+  
+  // Default tags
+  const DEFAULT_TAGS = [
+    'Sin gluten', 'Sin lactosa', 'Sin fructosa', 'Sin sorbitol', 'Sin marisco',
+    'Vegano', 'Vegetariano', 'Sin azúcares añadidos', 'Sin edulcorantes',
+    'Alto en fibra', 'Bajo en grasa', 'Rico en proteínas', 'Sin conservantes'
+  ];
+  
+  // Components (always available)
   const [components, setComponents] = useState<LocalComponent[]>([]);
   const [showComponentModal, setShowComponentModal] = useState(false);
   const [editingComponent, setEditingComponent] = useState<LocalComponent | null>(null);
@@ -94,7 +105,7 @@ export default function FoodScreen() {
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(!isNew);
   const [isInternal, setIsInternal] = useState(false);
-  const [activeSection, setActiveSection] = useState<'nutrition' | 'fodmap' | 'extras'>('nutrition');
+  const [isEditing, setIsEditing] = useState(isNew);
 
   useEffect(() => {
     loadAvailableFoods();
@@ -136,8 +147,22 @@ export default function FoodScreen() {
         setNotes(food.notes || '');
         setBrand(food.brand || '');
         setImageUri(food.image_uri || null);
-        setIsCompound(food.is_compound || false);
         setIsInternal(food.source === 'internal');
+        
+        // Load components (always available, not just for compound foods)
+        const componentsData = await db.getAllAsync(
+          'SELECT * FROM food_components WHERE parent_food_id = ?',
+          [parseInt(id!)]
+        );
+        
+        setComponents((componentsData as any[]).map((c: any) => ({
+          id: c.id,
+          component_food_id: c.component_food_id,
+          name: c.name || 'Ingrediente',
+          quantity: c.quantity,
+          unit: c.unit || 'g',
+          fodmap_level: c.fodmap_level,
+        })));
         
         // Parse FODMAP details
         if (food.fodmap_details) {
@@ -174,22 +199,21 @@ export default function FoodScreen() {
           setNutriScore(food.nutri_score as NutriScore);
         }
         
-        // Load components if compound food
-        if (food.is_compound) {
-          const componentsData = await db.getAllAsync(
-            'SELECT * FROM food_components WHERE parent_food_id = ?',
-            [parseInt(id!)]
-          );
-          
-          setComponents((componentsData as any[]).map((c: any) => ({
-            id: c.id,
-            component_food_id: c.component_food_id,
-            name: c.name || 'Ingrediente',
-            quantity: c.quantity,
-            unit: c.unit || 'g',
-            fodmap_level: c.fodmap_level,
-          })));
+        // Parse tags
+        if (food.tags) {
+          try {
+            const parsedTags = typeof food.tags === 'string' ? JSON.parse(food.tags) : food.tags;
+            setTags(Array.isArray(parsedTags) ? parsedTags : []);
+          } catch (e) {
+            console.log('Error parsing tags:', e);
+            setTags([]);
+          }
+        } else {
+          setTags([]);
         }
+        
+        // Load digestive effect
+        setDigestiveEffect((food as any).digestive_effect !== undefined && (food as any).digestive_effect !== null ? (food as any).digestive_effect : 0);
       }
     } catch (error) {
       console.error('Error loading food:', error);
@@ -229,8 +253,10 @@ export default function FoodScreen() {
           ? JSON.stringify(nutrition) 
           : null,
         nutri_score: nutriScore,
-        is_compound: isCompound ? 1 : 0,
+        is_compound: components.length > 0 ? 1 : 0,
         image_uri: imageUri,
+        tags: tags.length > 0 ? JSON.stringify(tags) : null,
+        digestive_effect: digestiveEffect,
         source: 'user',
       };
 
@@ -246,8 +272,8 @@ export default function FoodScreen() {
         await db.runAsync('DELETE FROM food_components WHERE parent_food_id = ?', [foodId]);
       }
       
-      // Insert components if compound food
-      if (isCompound && components.length > 0) {
+      // Insert components (always, if any exist)
+      if (components.length > 0) {
         for (const comp of components) {
           await db.runAsync(
             `INSERT INTO food_components (parent_food_id, component_food_id, name, quantity, unit, fodmap_level)
@@ -465,6 +491,36 @@ export default function FoodScreen() {
     </View>
   );
   
+  // Custom Tag Input Component
+  const CustomTagInput = ({ placeholder, onTagAdd }: { placeholder: string; onTagAdd: (tag: string) => void }) => {
+    const [inputValue, setInputValue] = useState('');
+    
+    return (
+      <TextInput
+        value={inputValue}
+        onChangeText={setInputValue}
+        placeholder={placeholder}
+        placeholderTextColor={colors.textMuted}
+        onSubmitEditing={(e) => {
+          const newTag = e.nativeEvent.text.trim();
+          if (newTag) {
+            onTagAdd(newTag);
+            setInputValue('');
+          }
+        }}
+        style={{
+          fontSize: 13,
+          color: colors.text,
+          padding: 10,
+          backgroundColor: colors.cardElevated,
+          borderRadius: 8,
+          borderWidth: 1,
+          borderColor: colors.border,
+        }}
+      />
+    );
+  };
+
   // Nutrition Display Row (for read-only detailed view)
   const NutritionDisplayRow = ({ 
     label, 
@@ -644,34 +700,420 @@ export default function FoodScreen() {
     </Pressable>
   );
 
-  const SectionTab = ({ section, label, icon }: { section: typeof activeSection; label: string; icon: string }) => (
-    <Pressable
-      onPress={() => setActiveSection(section)}
-      style={{
-        flex: 1,
-        paddingVertical: 10,
-        alignItems: 'center',
-        borderBottomWidth: 2,
-        borderBottomColor: activeSection === section ? colors.primary : 'transparent',
-        flexDirection: 'row',
-        justifyContent: 'center',
-        gap: 6,
-      }}
-    >
-      <Ionicons 
-        name={icon as any} 
-        size={16} 
-        color={activeSection === section ? colors.primary : colors.textSecondary} 
-      />
-      <Text style={{
-        fontSize: 12,
-        fontWeight: '600',
-        color: activeSection === section ? colors.primary : colors.textSecondary,
-      }}>
-        {label}
-      </Text>
-    </Pressable>
-  );
+  // Food Read View Component
+  const FoodReadView = () => {
+    const cat = FOOD_CATEGORIES.find(c => c.id === category);
+    
+    return (
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={{ 
+          padding: isLargeScreen ? 24 : 16, 
+          paddingBottom: 100,
+          maxWidth: isLargeScreen ? 1200 : undefined,
+          alignSelf: isLargeScreen ? 'center' : undefined,
+          width: isLargeScreen ? '100%' : undefined,
+        }}
+      >
+        {/* Header Card */}
+        <Animated.View entering={FadeInDown.delay(50).springify()}>
+          <Card style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+              {cat && (
+                <View style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: 12,
+                  backgroundColor: colors.primary + '15',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <Ionicons name={cat.icon as any} size={24} color={colors.primary} />
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 22, fontWeight: '700', color: colors.text, marginBottom: 4 }}>
+                  {name}
+                </Text>
+                {brand && (
+                  <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+                    {brand}
+                  </Text>
+                )}
+              </View>
+              <FODMAPBadge level={fodmapLevel} size="md" />
+            </View>
+            
+            {/* Image */}
+            {imageUri && (
+              <View style={{ marginTop: 12, borderRadius: 12, overflow: 'hidden' }}>
+                <Image source={{ uri: imageUri }} style={{ width: '100%', height: 200, resizeMode: 'cover' }} />
+              </View>
+            )}
+          </Card>
+        </Animated.View>
+
+        {/* Nutrition Card */}
+        {showNutrition && Object.keys(nutrition).length > 0 && (
+          <Animated.View entering={FadeInDown.delay(100).springify()}>
+            <Card style={{ marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                <View style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  backgroundColor: colors.primary + '15',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <Ionicons name="nutrition" size={16} color={colors.primary} />
+                </View>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text }}>
+                  Información Nutricional
+                </Text>
+                {servingSize && (
+                  <Text style={{ fontSize: 12, color: colors.textMuted, marginLeft: 'auto' }}>
+                    por {servingSize} {servingUnit}
+                  </Text>
+                )}
+              </View>
+
+              {/* Calories Hero */}
+              {nutrition.calories !== undefined && (
+                <View style={{
+                  backgroundColor: colors.primary + '10',
+                  borderRadius: 12,
+                  padding: 16,
+                  marginBottom: 16,
+                  alignItems: 'center',
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Ionicons name="flame" size={24} color={colors.primary} />
+                    <Text style={{ fontSize: 32, fontWeight: '800', color: colors.primary }}>
+                      {nutrition.calories}
+                    </Text>
+                    <Text style={{ fontSize: 16, color: colors.textSecondary }}>
+                      kcal
+                    </Text>
+                  </View>
+                </View>
+              )}
+
+              {/* Macros Grid */}
+              <View style={{ flexDirection: 'row', gap: 10, marginBottom: 16 }}>
+                {nutrition.protein_g !== undefined && (
+                  <View style={{ flex: 1, backgroundColor: colors.cardElevated, borderRadius: 10, padding: 12, alignItems: 'center' }}>
+                    <Ionicons name="fish" size={18} color="#E91E63" />
+                    <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text, marginTop: 4 }}>
+                      {nutrition.protein_g}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.textMuted }}>g proteína</Text>
+                  </View>
+                )}
+                {nutrition.carbs_g !== undefined && (
+                  <View style={{ flex: 1, backgroundColor: colors.cardElevated, borderRadius: 10, padding: 12, alignItems: 'center' }}>
+                    <Ionicons name="leaf" size={18} color="#FF9800" />
+                    <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text, marginTop: 4 }}>
+                      {nutrition.carbs_g}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.textMuted }}>g carbohidratos</Text>
+                  </View>
+                )}
+                {nutrition.fat_g !== undefined && (
+                  <View style={{ flex: 1, backgroundColor: colors.cardElevated, borderRadius: 10, padding: 12, alignItems: 'center' }}>
+                    <Ionicons name="water" size={18} color="#2196F3" />
+                    <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text, marginTop: 4 }}>
+                      {nutrition.fat_g}
+                    </Text>
+                    <Text style={{ fontSize: 11, color: colors.textMuted }}>g grasas</Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Additional Info */}
+              <View style={{ gap: 8 }}>
+                {nutrition.fiber_g !== undefined && (
+                  <NutritionDisplayRow label="Fibra" value={nutrition.fiber_g} unit="g" />
+                )}
+                {nutrition.sugars_g !== undefined && (
+                  <NutritionDisplayRow label="Azúcares" value={nutrition.sugars_g} unit="g" />
+                )}
+                {nutrition.saturated_fat_g !== undefined && (
+                  <NutritionDisplayRow label="Grasas saturadas" value={nutrition.saturated_fat_g} unit="g" />
+                )}
+                {nutrition.sodium_mg !== undefined && (
+                  <NutritionDisplayRow label="Sodio" value={nutrition.sodium_mg} unit="mg" />
+                )}
+                {nutrition.cholesterol_mg !== undefined && (
+                  <NutritionDisplayRow label="Colesterol" value={nutrition.cholesterol_mg} unit="mg" />
+                )}
+                {nutrition.potassium_mg !== undefined && (
+                  <NutritionDisplayRow label="Potasio" value={nutrition.potassium_mg} unit="mg" />
+                )}
+                {nutrition.calcium_mg !== undefined && (
+                  <NutritionDisplayRow label="Calcio" value={nutrition.calcium_mg} unit="mg" />
+                )}
+                {nutrition.iron_mg !== undefined && (
+                  <NutritionDisplayRow label="Hierro" value={nutrition.iron_mg} unit="mg" />
+                )}
+              </View>
+            </Card>
+          </Animated.View>
+        )}
+
+        {/* FODMAP Card */}
+        <Animated.View entering={FadeInDown.delay(150).springify()}>
+          <Card style={{ marginBottom: 16 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <View style={{
+                width: 32,
+                height: 32,
+                borderRadius: 8,
+                backgroundColor: colors.fodmapLow + '15',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <Ionicons name="leaf" size={16} color={colors.fodmapLow} />
+              </View>
+              <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text }}>
+                Información FODMAP
+              </Text>
+            </View>
+
+            <View style={{ marginBottom: 12 }}>
+              <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                Nivel general
+              </Text>
+              <FODMAPBadge level={fodmapLevel} size="md" />
+            </View>
+
+            {showDetailedFodmap && (
+              <View style={{ gap: 8 }}>
+                {fodmapDetails.fructans && (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 }}>
+                    <Text style={{ fontSize: 13, color: colors.text }}>Fructanos</Text>
+                    <FODMAPBadge level={fodmapDetails.fructans as FODMAPLevel} size="sm" />
+                  </View>
+                )}
+                {fodmapDetails.gos && (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 }}>
+                    <Text style={{ fontSize: 13, color: colors.text }}>GOS</Text>
+                    <FODMAPBadge level={fodmapDetails.gos as FODMAPLevel} size="sm" />
+                  </View>
+                )}
+                {fodmapDetails.lactose && (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 }}>
+                    <Text style={{ fontSize: 13, color: colors.text }}>Lactosa</Text>
+                    <FODMAPBadge level={fodmapDetails.lactose as FODMAPLevel} size="sm" />
+                  </View>
+                )}
+                {fodmapDetails.fructose && (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 }}>
+                    <Text style={{ fontSize: 13, color: colors.text }}>Fructosa</Text>
+                    <FODMAPBadge level={fodmapDetails.fructose as FODMAPLevel} size="sm" />
+                  </View>
+                )}
+                {fodmapDetails.sorbitol && (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 }}>
+                    <Text style={{ fontSize: 13, color: colors.text }}>Sorbitol</Text>
+                    <FODMAPBadge level={fodmapDetails.sorbitol as FODMAPLevel} size="sm" />
+                  </View>
+                )}
+                {fodmapDetails.mannitol && (
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 6 }}>
+                    <Text style={{ fontSize: 13, color: colors.text }}>Manitol</Text>
+                    <FODMAPBadge level={fodmapDetails.mannitol as FODMAPLevel} size="sm" />
+                  </View>
+                )}
+                {(safeServing || limitServing) && (
+                  <View style={{ marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: colors.border }}>
+                    {safeServing && (
+                      <View style={{ marginBottom: 8 }}>
+                        <Text style={{ fontSize: 12, color: colors.fodmapLow, fontWeight: '600', marginBottom: 4 }}>
+                          🟢 Porción segura
+                        </Text>
+                        <Text style={{ fontSize: 13, color: colors.text }}>{safeServing}</Text>
+                      </View>
+                    )}
+                    {limitServing && (
+                      <View>
+                        <Text style={{ fontSize: 12, color: colors.fodmapMedium, fontWeight: '600', marginBottom: 4 }}>
+                          🟡 Porción límite
+                        </Text>
+                        <Text style={{ fontSize: 13, color: colors.text }}>{limitServing}</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
+            )}
+          </Card>
+        </Animated.View>
+
+        {/* Components Card */}
+        {components.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(200).springify()}>
+            <Card style={{ marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <View style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  backgroundColor: colors.primary + '15',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <Ionicons name="list" size={16} color={colors.primary} />
+                </View>
+                <Text style={{ fontSize: 16, fontWeight: '600', color: colors.text }}>
+                  Ingredientes
+                </Text>
+              </View>
+              {components.map((comp, index) => (
+                <View key={index} style={{ 
+                  flexDirection: 'row', 
+                  alignItems: 'center', 
+                  gap: 10, 
+                  paddingVertical: 8,
+                  borderBottomWidth: index < components.length - 1 ? 1 : 0,
+                  borderBottomColor: colors.border,
+                }}>
+                  <FODMAPBadge level={comp.fodmap_level || 'unknown'} size="sm" />
+                  <Text style={{ flex: 1, fontSize: 14, color: colors.text }}>
+                    {comp.name}
+                  </Text>
+                  <Text style={{ fontSize: 13, color: colors.textSecondary }}>
+                    {comp.quantity} {comp.unit}
+                  </Text>
+                </View>
+              ))}
+            </Card>
+          </Animated.View>
+        )}
+
+        {/* Tags */}
+        {tags.length > 0 && (
+          <Animated.View entering={FadeInDown.delay(250).springify()}>
+            <Card style={{ marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <Ionicons name="pricetag" size={16} color={colors.primary} />
+                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                  Etiquetas
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
+                {tags.map(tag => (
+                  <View
+                    key={tag}
+                    style={{
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      borderRadius: 16,
+                      backgroundColor: colors.primary + '15',
+                      borderWidth: 1,
+                      borderColor: colors.primary + '30',
+                    }}
+                  >
+                    <Text style={{
+                      fontSize: 12,
+                      fontWeight: '600',
+                      color: colors.primary,
+                    }}>
+                      {tag}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </Card>
+          </Animated.View>
+        )}
+
+        {/* Digestive Effect */}
+        {digestiveEffect !== 0 && (
+          <Animated.View entering={FadeInDown.delay(275).springify()}>
+            <Card style={{ marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                <Ionicons name="medical" size={16} color="#9C27B0" />
+                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                  Efecto Digestivo
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <Text style={{ fontSize: 12, color: colors.error, fontWeight: '600' }}>Diarrea</Text>
+                <View style={{ flexDirection: 'row', gap: 4, flex: 1, justifyContent: 'center' }}>
+                  {[-2, -1, 0, 1, 2].map(value => (
+                    <View
+                      key={value}
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 18,
+                        backgroundColor: digestiveEffect === value 
+                          ? (value < 0 ? colors.error : value > 0 ? '#FF9800' : colors.primary)
+                          : 'transparent',
+                        borderWidth: 2,
+                        borderColor: digestiveEffect === value 
+                          ? (value < 0 ? colors.error : value > 0 ? '#FF9800' : colors.primary)
+                          : colors.border,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}
+                    >
+                      <Text style={{
+                        fontSize: 14,
+                        fontWeight: '700',
+                        color: digestiveEffect === value ? '#FFFFFF' : colors.textMuted,
+                      }}>
+                        {value}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+                <Text style={{ fontSize: 12, color: '#FF9800', fontWeight: '600' }}>Estreñimiento</Text>
+              </View>
+              <Text style={{ fontSize: 11, color: colors.textMuted, textAlign: 'center', marginTop: 8 }}>
+                {digestiveEffect < 0 ? `Puede empeorar diarrea (${Math.abs(digestiveEffect)})` :
+                 digestiveEffect > 0 ? `Puede empeorar estreñimiento (+${digestiveEffect})` :
+                 'Neutro'}
+              </Text>
+            </Card>
+          </Animated.View>
+        )}
+
+        {/* Notes */}
+        {notes && (
+          <Animated.View entering={FadeInDown.delay(300).springify()}>
+            <Card style={{ marginBottom: 16 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                <Ionicons name="document-text-outline" size={16} color={colors.textSecondary} />
+                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                  Notas
+                </Text>
+              </View>
+              <Text style={{ fontSize: 14, color: colors.text, lineHeight: 20 }}>
+                {notes}
+              </Text>
+            </Card>
+          </Animated.View>
+        )}
+
+        {/* Edit Button */}
+        {!isInternal && (
+          <Animated.View entering={FadeInDown.delay(300).springify()}>
+            <Button
+              onPress={() => setIsEditing(true)}
+              style={{ marginBottom: 16 }}
+            >
+              <Ionicons name="create-outline" size={18} color="#FFFFFF" />
+              <Text style={{ color: '#FFFFFF', fontWeight: '600', marginLeft: 8 }}>
+                Editar alimento
+              </Text>
+            </Button>
+          </Animated.View>
+        )}
+      </ScrollView>
+    );
+  };
 
   if (initialLoading) {
     return (
@@ -685,13 +1127,28 @@ export default function FoodScreen() {
     <>
       <Stack.Screen
         options={{
-          title: isNew ? 'Nuevo alimento' : (isInternal ? 'Ver alimento' : 'Editar alimento'),
+          title: isNew ? 'Nuevo alimento' : (isEditing ? 'Editar alimento' : name || 'Ver alimento'),
           headerStyle: { backgroundColor: colors.surface },
           headerTintColor: colors.text,
+          headerRight: () => !isNew && !isEditing && !isInternal ? (
+            <Pressable
+              onPress={() => setIsEditing(true)}
+              style={{ marginRight: 16 }}
+            >
+              <Ionicons name="create-outline" size={24} color={colors.primary} />
+            </Pressable>
+          ) : !isNew && isEditing ? (
+            <Pressable
+              onPress={() => setIsEditing(false)}
+              style={{ marginRight: 16 }}
+            >
+              <Ionicons name="close-outline" size={24} color={colors.text} />
+            </Pressable>
+          ) : null,
         }}
       />
       <View style={{ flex: 1, backgroundColor: colors.background }}>
-        {isInternal && (
+        {isInternal && !isEditing && (
           <View style={{
             backgroundColor: colors.primary + '15',
             padding: 12,
@@ -708,209 +1165,122 @@ export default function FoodScreen() {
           </View>
         )}
 
-        {/* Section Tabs */}
-        <View style={{ 
-          flexDirection: 'row', 
-          borderBottomWidth: 1, 
-          borderBottomColor: colors.border,
-          backgroundColor: colors.surface,
-        }}>
-          <SectionTab section="nutrition" label="Nutrición" icon="nutrition-outline" />
-          <SectionTab section="fodmap" label="FODMAP" icon="leaf-outline" />
-          <SectionTab section="extras" label="Extras" icon="options-outline" />
-        </View>
-
-        <ScrollView
-          style={{ flex: 1 }}
-          contentContainerStyle={{ 
-            padding: isLargeScreen ? 24 : 16, 
-            paddingBottom: 100,
-            maxWidth: isLargeScreen ? 1200 : undefined,
-            alignSelf: isLargeScreen ? 'center' : undefined,
-            width: isLargeScreen ? '100%' : undefined,
-          }}
-        >
-          {/* Nutrition Section - Now First Tab */}
-          {activeSection === 'nutrition' && (
-            <View style={isLargeScreen ? { flexDirection: 'row', gap: 24 } : {}}>
-              {/* Left Column - Basic Info */}
-              <View style={isLargeScreen ? { flex: 1 } : {}}>
-                {/* Name */}
-                <Animated.View entering={FadeInDown.delay(50).springify()}>
-                  <Card style={{ marginBottom: 16 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-                      Nombre *
-                    </Text>
-                    <TextInput
-                      value={name}
-                      onChangeText={setName}
-                      placeholder="Ej: Arroz, Pollo, Zanahoria..."
-                      placeholderTextColor={colors.textMuted}
-                      editable={!isInternal}
-                      style={{
-                        fontSize: 16,
-                        color: colors.text,
-                        padding: 12,
-                        backgroundColor: colors.cardElevated,
-                        borderRadius: 10,
-                        opacity: isInternal ? 0.7 : 1,
-                      }}
-                    />
-                  </Card>
-                </Animated.View>
-
-                {/* Category */}
-                <Animated.View entering={FadeInDown.delay(100).springify()}>
-                  <Card style={{ marginBottom: 16 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
-                      Categoría
-                    </Text>
-                    <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                      {FOOD_CATEGORIES.map(cat => (
-                        <CategoryOption key={cat.id} cat={cat} />
-                      ))}
-                    </View>
-                  </Card>
-                </Animated.View>
-
-                {/* Brand (for processed foods) */}
-                {category === 'processed' && (
-                  <Animated.View entering={FadeInDown.delay(125).springify()}>
-                    <Card style={{ marginBottom: 16 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-                        Marca
-                      </Text>
-                      <TextInput
-                        value={brand}
-                        onChangeText={setBrand}
-                        placeholder="Ej: Hacendado, Carrefour..."
-                        placeholderTextColor={colors.textMuted}
-                        editable={!isInternal}
-                        style={{
-                          fontSize: 16,
-                          color: colors.text,
-                          padding: 12,
-                          backgroundColor: colors.cardElevated,
-                          borderRadius: 10,
-                          opacity: isInternal ? 0.7 : 1,
-                        }}
-                      />
-                    </Card>
-                  </Animated.View>
-                )}
-
-                {/* Serving Size */}
-                <Animated.View entering={FadeInDown.delay(150).springify()}>
-                  <Card style={{ marginBottom: 16 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
-                      Tamaño de porción
-                    </Text>
-                    <View style={{ flexDirection: 'row', gap: 10 }}>
-                      <TextInput
-                        value={servingSize}
-                        onChangeText={setServingSize}
-                        placeholder="100"
-                      placeholderTextColor={colors.textMuted}
-                      keyboardType="numeric"
-                      editable={!isInternal}
-                      style={{
-                        flex: 1,
-                        fontSize: 16,
-                        color: colors.text,
-                        padding: 12,
-                        backgroundColor: colors.cardElevated,
-                        borderRadius: 10,
-                        opacity: isInternal ? 0.7 : 1,
-                        textAlign: 'center',
-                      }}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <ScrollView 
-                        horizontal 
-                        showsHorizontalScrollIndicator={false}
-                        contentContainerStyle={{ gap: 6 }}
-                      >
-                        {['g', 'ml', 'unidad', 'taza', 'cdta', 'cda', 'puñado'].map(unit => (
-                          <Pressable
-                            key={unit}
-                            onPress={() => !isInternal && setServingUnit(unit)}
-                            style={{
-                              paddingHorizontal: 12,
-                              paddingVertical: 10,
-                              borderRadius: 8,
-                              backgroundColor: servingUnit === unit ? colors.primary : colors.cardElevated,
-                              opacity: isInternal ? 0.7 : 1,
-                            }}
-                          >
-                            <Text style={{
-                              fontSize: 13,
-                              fontWeight: '600',
-                              color: servingUnit === unit ? '#FFFFFF' : colors.textSecondary,
-                            }}>
-                              {unit}
-                            </Text>
-                          </Pressable>
-                        ))}
-                      </ScrollView>
-                    </View>
-                  </View>
+        {!isEditing && !isNew ? (
+          <FoodReadView />
+        ) : (
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ 
+              padding: isLargeScreen ? 24 : 16, 
+              paddingBottom: 100,
+              maxWidth: isLargeScreen ? 1200 : undefined,
+              alignSelf: isLargeScreen ? 'center' : undefined,
+              width: isLargeScreen ? '100%' : undefined,
+            }}
+          >
+            {/* Name */}
+            <Animated.View entering={FadeInDown.delay(50).springify()}>
+              <View style={{ flexDirection: isLargeScreen ? 'row' : 'column', gap: 16, marginBottom: 16 }}>
+                <Card style={{ flex: 1, marginBottom: 0 }}>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                    Nombre *
+                  </Text>
+                  <TextInput
+                    value={name}
+                    onChangeText={setName}
+                    placeholder="Ej: Arroz, Pollo, Zanahoria..."
+                    placeholderTextColor={colors.textMuted}
+                    style={{
+                      fontSize: 16,
+                      color: colors.text,
+                      padding: 12,
+                      backgroundColor: colors.cardElevated,
+                      borderRadius: 10,
+                    }}
+                  />
                 </Card>
-              </Animated.View>
+                {/* Image - Next to name but separate */}
+                <Card style={{ width: isLargeScreen ? 200 : '100%', marginBottom: 0 }}>
+                  <ImagePickerButton
+                    imageUri={imageUri}
+                    onImageSelected={setImageUri}
+                    height={isLargeScreen ? 120 : 200}
+                  />
+                </Card>
+              </View>
+            </Animated.View>
 
-              {/* Compound Food Toggle */}
-              <Animated.View entering={FadeInDown.delay(175).springify()}>
+            {/* Category */}
+            <Animated.View entering={FadeInDown.delay(100).springify()}>
+              <Card style={{ marginBottom: 16 }}>
+                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
+                  Categoría
+                </Text>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
+                  {FOOD_CATEGORIES.map(cat => (
+                    <CategoryOption key={cat.id} cat={cat} />
+                  ))}
+                </View>
+              </Card>
+            </Animated.View>
+
+            {/* Brand (for processed foods) */}
+            {category === 'processed' && (
+              <Animated.View entering={FadeInDown.delay(125).springify()}>
                 <Card style={{ marginBottom: 16 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
-                        Alimento compuesto
-                      </Text>
-                      <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
-                        Contiene múltiples ingredientes
-                      </Text>
-                    </View>
-                    <Switch
-                      value={isCompound}
-                      onValueChange={setIsCompound}
-                      trackColor={{ false: colors.border, true: colors.primary + '50' }}
-                      thumbColor={isCompound ? colors.primary : colors.textMuted}
-                      disabled={isInternal}
-                    />
-                  </View>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+                    Marca
+                  </Text>
+                  <TextInput
+                    value={brand}
+                    onChangeText={setBrand}
+                    placeholder="Ej: Hacendado, Carrefour..."
+                    placeholderTextColor={colors.textMuted}
+                    style={{
+                      fontSize: 16,
+                      color: colors.text,
+                      padding: 12,
+                      backgroundColor: colors.cardElevated,
+                      borderRadius: 10,
+                    }}
+                  />
                 </Card>
               </Animated.View>
+            )}
+            {/* Row 1: Ingredients | Nutrition */}
+            <Animated.View entering={FadeInDown.delay(150).springify()}>
+              <View style={{ flexDirection: isLargeScreen ? 'row' : 'column', gap: 16, marginBottom: 16 }}>
+                {/* Ingredients Section */}
+                <Card style={isLargeScreen ? { flex: 1, marginBottom: 0 } : { marginBottom: 16 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 8,
+                        backgroundColor: colors.primary + '15',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}>
+                        <Ionicons name="list" size={16} color={colors.primary} />
+                      </View>
+                      <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+                        Ingredientes
+                      </Text>
+                    </View>
+                    <Pressable
+                      onPress={() => openComponentModal()}
+                      style={{
+                        paddingHorizontal: 12,
+                        paddingVertical: 6,
+                        backgroundColor: colors.primary,
+                        borderRadius: 8,
+                      }}
+                    >
+                      <Ionicons name="add" size={18} color="#FFFFFF" />
+                    </Pressable>
+                  </View>
 
-              {/* Component List (if compound) */}
-              {isCompound && (
-                <>
-                  {/* Add Component Button */}
-                  {!isInternal && (
-                    <Animated.View entering={FadeInDown.delay(200).springify()}>
-                      <Pressable
-                        onPress={() => openComponentModal()}
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          padding: 14,
-                          backgroundColor: colors.primary + '15',
-                          borderRadius: 12,
-                          marginBottom: 16,
-                          gap: 8,
-                          borderWidth: 2,
-                          borderColor: colors.primary + '30',
-                          borderStyle: 'dashed',
-                        }}
-                      >
-                        <Ionicons name="add-circle-outline" size={22} color={colors.primary} />
-                        <Text style={{ fontSize: 15, fontWeight: '600', color: colors.primary }}>
-                          Añadir ingrediente
-                        </Text>
-                      </Pressable>
-                    </Animated.View>
-                  )}
-
-                  {/* Components List */}
                   {components.length === 0 ? (
                     <View style={{ alignItems: 'center', paddingVertical: 20 }}>
                       <Ionicons name="nutrition-outline" size={32} color={colors.textMuted} />
@@ -927,10 +1297,10 @@ export default function FoodScreen() {
                       >
                         <Card style={{ marginBottom: 8 }}>
                           <Pressable
-                            onPress={() => !isInternal && openComponentModal(comp)}
+                            onPress={() => openComponentModal(comp)}
                             style={{ flexDirection: 'row', alignItems: 'center' }}
                           >
-                            <FODMAPBadge level={comp.fodmap_level || 'unknown'} size="small" />
+                            <FODMAPBadge level={comp.fodmap_level || 'unknown'} size="sm" />
                             <View style={{ flex: 1, marginLeft: 10 }}>
                               <Text style={{ fontSize: 14, fontWeight: '500', color: colors.text }}>
                                 {comp.name}
@@ -939,24 +1309,17 @@ export default function FoodScreen() {
                                 {comp.quantity} {comp.unit}
                               </Text>
                             </View>
-                            {!isInternal && (
-                              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-                            )}
+                            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
                           </Pressable>
                         </Card>
                       </Animated.View>
                     ))
                   )}
-                </>
-              )}
-              </View>
-              
-              {/* Right Column - Nutrition Info */}
-              <View style={isLargeScreen ? { flex: 1 } : {}}>
-              {/* Modern Nutrition Section */}
-              <Animated.View entering={FadeInDown.delay(225).springify()}>
-                <Card style={{ marginBottom: 16 }}>
-                  {/* Section Header */}
+                </Card>
+
+                {/* Nutrition Section */}
+                <Card style={isLargeScreen ? { flex: 1, marginBottom: 0 } : { marginBottom: 16 }}>
+                  {/* Section Header with Serving Size */}
                   <View style={{ 
                     flexDirection: 'row', 
                     alignItems: 'center', 
@@ -978,15 +1341,48 @@ export default function FoodScreen() {
                         Información Nutricional
                       </Text>
                     </View>
-                    <View style={{
-                      paddingHorizontal: 10,
-                      paddingVertical: 4,
-                      backgroundColor: colors.cardElevated,
-                      borderRadius: 12,
-                    }}>
-                      <Text style={{ fontSize: 11, color: colors.textMuted, fontWeight: '500' }}>
-                        por 100g
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={{ fontSize: 12, color: colors.textSecondary }}>
+                        por
                       </Text>
+                      <TextInput
+                        value={servingSize}
+                        onChangeText={setServingSize}
+                        placeholder="100"
+                        placeholderTextColor={colors.textMuted}
+                        keyboardType="numeric"
+                        style={{
+                          width: 60,
+                          fontSize: 14,
+                          color: colors.text,
+                          padding: 6,
+                          backgroundColor: colors.cardElevated,
+                          borderRadius: 8,
+                          textAlign: 'center',
+                        }}
+                      />
+                      <View style={{ flexDirection: 'row', gap: 4 }}>
+                        {['g', 'ml'].map(unit => (
+                          <Pressable
+                            key={unit}
+                            onPress={() => setServingUnit(unit)}
+                            style={{
+                              paddingHorizontal: 8,
+                              paddingVertical: 4,
+                              borderRadius: 6,
+                              backgroundColor: servingUnit === unit ? colors.primary : colors.cardElevated,
+                            }}
+                          >
+                            <Text style={{
+                              fontSize: 12,
+                              fontWeight: '600',
+                              color: servingUnit === unit ? '#FFFFFF' : colors.textSecondary,
+                            }}>
+                              {unit}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
                     </View>
                   </View>
 
@@ -1081,77 +1477,163 @@ export default function FoodScreen() {
                     <NutritionInput label="Colesterol" value={nutrition.cholesterol_mg} unit="mg" field="cholesterol_mg" />
                   </View>
                 </Card>
-              </Animated.View>
+              </View>
+            </Animated.View>
 
-              {/* Minerals Card */}
-              <Animated.View entering={FadeInDown.delay(275).springify()}>
-                <Card style={{ marginBottom: 16 }}>
-                  <View style={{ 
-                    flexDirection: 'row', 
-                    alignItems: 'center', 
-                    gap: 8,
-                    marginBottom: 12,
+            {/* Row 2: Minerals & Vitamins */}
+            <Animated.View entering={FadeInDown.delay(175).springify()}>
+              <Card style={{ marginBottom: 16 }}>
+                <View style={{ 
+                  flexDirection: 'row', 
+                  alignItems: 'center', 
+                  gap: 8,
+                  marginBottom: 12,
+                }}>
+                  <View style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 6,
+                    backgroundColor: '#9C27B0' + '15',
+                    alignItems: 'center',
+                    justifyContent: 'center',
                   }}>
+                    <Ionicons name="sparkles" size={14} color="#9C27B0" />
+                  </View>
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                    Minerales y Vitaminas (opcional)
+                  </Text>
+                </View>
+                
+                <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+                  <NutritionInput label="Potasio" value={nutrition.potassium_mg} unit="mg" field="potassium_mg" color="#9C27B0" />
+                  <NutritionInput label="Calcio" value={nutrition.calcium_mg} unit="mg" field="calcium_mg" color="#9C27B0" />
+                  <NutritionInput label="Hierro" value={nutrition.iron_mg} unit="mg" field="iron_mg" color="#9C27B0" />
+                </View>
+                
+                {/* Disclaimer */}
+                <Text style={{ 
+                  fontSize: 10, 
+                  color: colors.textMuted, 
+                  marginTop: 14,
+                  lineHeight: 14,
+                  textAlign: 'center',
+                }}>
+                  * Los valores diarios de referencia se basan en una dieta de 2000 kcal.
+                </Text>
+              </Card>
+            </Animated.View>
+
+            {/* Row 3: Nutri-Score | Digestive Effect */}
+            <Animated.View entering={FadeInDown.delay(200).springify()}>
+              <View style={{ flexDirection: isLargeScreen ? 'row' : 'column', gap: 16, marginBottom: 16 }}>
+                {/* Nutri-Score Card */}
+                <Card style={isLargeScreen ? { flex: 1, marginBottom: 0 } : { marginBottom: 16 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
                     <View style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 6,
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      backgroundColor: '#FF9800' + '15',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Ionicons name="star" size={16} color="#FF9800" />
+                    </View>
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+                      Nutri-Score
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+                    {([null, 'A', 'B', 'C', 'D', 'E'] as NutriScore[]).map(score => (
+                      <NutriScoreOption key={score || 'none'} score={score} />
+                    ))}
+                  </View>
+                </Card>
+
+                {/* Digestive Effect Card */}
+                <Card style={isLargeScreen ? { flex: 1, marginBottom: 0 } : { marginBottom: 16 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                    <View style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
                       backgroundColor: '#9C27B0' + '15',
                       alignItems: 'center',
                       justifyContent: 'center',
                     }}>
-                      <Ionicons name="sparkles" size={14} color="#9C27B0" />
+                      <Ionicons name="medical" size={16} color="#9C27B0" />
                     </View>
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
-                      Minerales (opcional)
+                    <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+                      Efecto Digestivo
                     </Text>
                   </View>
-                  
-                  <View style={{ flexDirection: 'row', gap: 10 }}>
-                    <NutritionInput label="Potasio" value={nutrition.potassium_mg} unit="mg" field="potassium_mg" color="#9C27B0" />
-                    <NutritionInput label="Calcio" value={nutrition.calcium_mg} unit="mg" field="calcium_mg" color="#9C27B0" />
-                    <NutritionInput label="Hierro" value={nutrition.iron_mg} unit="mg" field="iron_mg" color="#9C27B0" />
+                  <View style={{ alignItems: 'center' }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                      <Text style={{ fontSize: 12, color: colors.error, fontWeight: '600' }}>Diarrea</Text>
+                      <View style={{ flexDirection: 'row', gap: 4 }}>
+                        {[-2, -1, 0, 1, 2].map(value => (
+                          <Pressable
+                            key={value}
+                            onPress={() => setDigestiveEffect(value)}
+                            style={{
+                              width: 44,
+                              height: 44,
+                              borderRadius: 22,
+                              backgroundColor: digestiveEffect === value 
+                                ? (value < 0 ? colors.error : value > 0 ? '#FF9800' : colors.primary)
+                                : colors.cardElevated,
+                              borderWidth: 2,
+                              borderColor: digestiveEffect === value 
+                                ? (value < 0 ? colors.error : value > 0 ? '#FF9800' : colors.primary)
+                                : colors.border,
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                            }}
+                          >
+                            <Text style={{
+                              fontSize: 16,
+                              fontWeight: '700',
+                              color: digestiveEffect === value ? '#FFFFFF' : colors.textMuted,
+                            }}>
+                              {value}
+                            </Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                      <Text style={{ fontSize: 12, color: '#FF9800', fontWeight: '600' }}>Estreñimiento</Text>
+                    </View>
+                    <Text style={{ fontSize: 11, color: colors.textMuted, textAlign: 'center' }}>
+                      {digestiveEffect === 0 ? 'Neutro' : 
+                       digestiveEffect < 0 ? `Puede empeorar diarrea (${Math.abs(digestiveEffect)})` :
+                       `Puede empeorar estreñimiento (+${digestiveEffect})`}
+                    </Text>
                   </View>
-                  
-                  {/* Disclaimer */}
-                  <Text style={{ 
-                    fontSize: 10, 
-                    color: colors.textMuted, 
-                    marginTop: 14,
-                    lineHeight: 14,
-                    textAlign: 'center',
-                  }}>
-                    * Los valores diarios de referencia se basan en una dieta de 2000 kcal.
-                  </Text>
                 </Card>
-              </Animated.View>
-
-              {/* Nutri-Score (for processed foods) */}
-              {category === 'processed' && (
-                <Animated.View entering={FadeInDown.delay(275).springify()}>
-                  <Card style={{ marginBottom: 16 }}>
-                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
-                      Nutri-Score (opcional)
-                    </Text>
-                    <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
-                      {([null, 'A', 'B', 'C', 'D', 'E'] as NutriScore[]).map(score => (
-                        <NutriScoreOption key={score || 'none'} score={score} />
-                      ))}
-                    </View>
-                  </Card>
-                </Animated.View>
-              )}
               </View>
-            </View>
-          )}
+            </Animated.View>
 
-          {/* FODMAP Section */}
-          {activeSection === 'fodmap' && (
-            <>
-              {/* Overall Level */}
-              <Animated.View entering={FadeInDown.delay(100).springify()}>
-                <Card style={{ marginBottom: 16 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
+            {/* Row 4: FODMAP */}
+            <Animated.View entering={FadeInDown.delay(225).springify()}>
+              <Card style={{ marginBottom: 16 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+                  <View style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    backgroundColor: colors.fodmapLow + '15',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <Ionicons name="leaf" size={16} color={colors.fodmapLow} />
+                  </View>
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+                    FODMAP
+                  </Text>
+                </View>
+
+                {/* Overall Level */}
+                <View style={{ marginBottom: 16 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
                     Nivel FODMAP general
                   </Text>
                   <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -1159,12 +1641,10 @@ export default function FoodScreen() {
                     <FODMAPOption level="medium" label="Medio" />
                     <FODMAPOption level="high" label="Alto" />
                   </View>
-                </Card>
-              </Animated.View>
+                </View>
 
-              {/* Detailed FODMAP Toggle */}
-              <Animated.View entering={FadeInDown.delay(150).springify()}>
-                <Card style={{ marginBottom: 16 }}>
+                {/* Detailed FODMAP Toggle */}
+                <View style={{ marginBottom: 16 }}>
                   <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
@@ -1179,16 +1659,13 @@ export default function FoodScreen() {
                       onValueChange={setShowDetailedFodmap}
                       trackColor={{ false: colors.border, true: colors.primary + '50' }}
                       thumbColor={showDetailedFodmap ? colors.primary : colors.textMuted}
-                      disabled={isInternal}
                     />
                   </View>
-                </Card>
-              </Animated.View>
+                </View>
 
-              {/* Detailed FODMAP Categories */}
-              {showDetailedFodmap && (
-                <Animated.View entering={FadeInDown.delay(200).springify()}>
-                  <Card style={{ marginBottom: 16 }}>
+                {/* Detailed FODMAP Categories */}
+                {showDetailedFodmap && (
+                  <View style={{ marginBottom: 16 }}>
                     <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textMuted, marginBottom: 16 }}>
                       CATEGORÍAS FODMAP
                     </Text>
@@ -1215,25 +1692,15 @@ export default function FoodScreen() {
                       <FODMAPDetailRow category="fructose" label="Exceso de fructosa (miel, manzana)" />
                     </View>
 
-                    <View>
+                    <View style={{ marginBottom: 16 }}>
                       <Text style={{ fontSize: 11, fontWeight: '700', color: colors.primary, marginBottom: 8 }}>
                         POLIOLES
                       </Text>
                       <FODMAPDetailRow category="sorbitol" label="Sorbitol (ciruela, aguacate)" />
                       <FODMAPDetailRow category="mannitol" label="Manitol (champiñón, coliflor)" />
                     </View>
-                  </Card>
-                </Animated.View>
-              )}
 
-              {/* Safe/Limit Serving */}
-              {showDetailedFodmap && (
-                <Animated.View entering={FadeInDown.delay(250).springify()}>
-                  <Card style={{ marginBottom: 16 }}>
-                    <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textMuted, marginBottom: 12 }}>
-                      PORCIONES RECOMENDADAS
-                    </Text>
-                    
+                    {/* Safe/Limit Serving */}
                     <View style={{ marginBottom: 12 }}>
                       <Text style={{ fontSize: 13, fontWeight: '600', color: colors.fodmapLow, marginBottom: 6 }}>
                         🟢 Porción segura (bajo FODMAP)
@@ -1243,14 +1710,12 @@ export default function FoodScreen() {
                         onChangeText={setSafeServing}
                         placeholder="Ej: 75g, 1/2 taza..."
                         placeholderTextColor={colors.textMuted}
-                        editable={!isInternal}
                         style={{
                           fontSize: 15,
                           color: colors.text,
                           padding: 12,
                           backgroundColor: colors.cardElevated,
                           borderRadius: 8,
-                          opacity: isInternal ? 0.7 : 1,
                         }}
                       />
                     </View>
@@ -1264,96 +1729,133 @@ export default function FoodScreen() {
                         onChangeText={setLimitServing}
                         placeholder="Ej: 150g, 1 taza..."
                         placeholderTextColor={colors.textMuted}
-                        editable={!isInternal}
                         style={{
                           fontSize: 15,
                           color: colors.text,
                           padding: 12,
                           backgroundColor: colors.cardElevated,
                           borderRadius: 8,
-                          opacity: isInternal ? 0.7 : 1,
                         }}
                       />
                     </View>
-                  </Card>
-                </Animated.View>
-              )}
-            </>
-          )}
+                  </View>
+                )}
+              </Card>
+            </Animated.View>
 
-          {/* Extras Section */}
-          {activeSection === 'extras' && (
-            <>
-              {/* Image */}
-              <Animated.View entering={FadeInDown.delay(50).springify()}>
-                <Card style={{ marginBottom: 16 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 12 }}>
-                    Foto del alimento
+            {/* Tags - Full width at bottom */}
+            <Animated.View entering={FadeInDown.delay(300).springify()}>
+              <Card style={{ marginBottom: 16 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                  <View style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 8,
+                    backgroundColor: colors.primary + '15',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}>
+                    <Ionicons name="pricetag" size={16} color={colors.primary} />
+                  </View>
+                  <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+                    Etiquetas
                   </Text>
-                  <ImagePickerButton
-                    imageUri={imageUri}
-                    onImageSelected={setImageUri}
-                    height={150}
-                    placeholder="Añadir foto del alimento"
-                    disabled={isInternal}
-                  />
-                </Card>
-              </Animated.View>
+                </View>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 }}>
+                  {DEFAULT_TAGS.map(tag => {
+                    const isSelected = tags.includes(tag);
+                    return (
+                      <Pressable
+                        key={tag}
+                        onPress={() => {
+                          if (isSelected) {
+                            setTags(tags.filter(t => t !== tag));
+                          } else {
+                            setTags([...tags, tag]);
+                          }
+                        }}
+                        style={{
+                          paddingHorizontal: 12,
+                          paddingVertical: 6,
+                          borderRadius: 16,
+                          backgroundColor: isSelected ? colors.primary : colors.cardElevated,
+                          borderWidth: 1,
+                          borderColor: isSelected ? colors.primary : colors.border,
+                        }}
+                      >
+                        <Text style={{
+                          fontSize: 12,
+                          fontWeight: '600',
+                          color: isSelected ? '#FFFFFF' : colors.text,
+                        }}>
+                          {tag}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <CustomTagInput
+                  placeholder="Añadir etiqueta personalizada..."
+                  onTagAdd={(tag) => {
+                    if (tag && !tags.includes(tag)) {
+                      setTags([...tags, tag]);
+                    }
+                  }}
+                />
+              </Card>
+            </Animated.View>
 
-              {/* Notes */}
-              <Animated.View entering={FadeInDown.delay(100).springify()}>
-                <Card style={{ marginBottom: 16 }}>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary, marginBottom: 8 }}>
+            {/* Notes - At the end */}
+            <Animated.View entering={FadeInDown.delay(325).springify()}>
+              <Card style={{ marginBottom: 16 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Ionicons name="document-text-outline" size={16} color={colors.textSecondary} />
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
                     Notas
                   </Text>
-                  <TextInput
-                    value={notes}
-                    onChangeText={setNotes}
-                    placeholder="Información adicional, consejos de preparación, etc."
-                    placeholderTextColor={colors.textMuted}
-                    multiline
-                    numberOfLines={4}
-                    editable={!isInternal}
-                    style={{
-                      fontSize: 15,
-                      color: colors.text,
-                      padding: 12,
-                      backgroundColor: colors.cardElevated,
-                      borderRadius: 10,
-                      minHeight: 100,
-                      textAlignVertical: 'top',
-                      opacity: isInternal ? 0.7 : 1,
-                    }}
-                  />
-                </Card>
-              </Animated.View>
-            </>
-          )}
-        </ScrollView>
+                </View>
+                <TextInput
+                  value={notes}
+                  onChangeText={setNotes}
+                  placeholder="Añade notas adicionales sobre este alimento..."
+                  placeholderTextColor={colors.textMuted}
+                  multiline
+                  style={{
+                    fontSize: 14,
+                    color: colors.text,
+                    padding: 12,
+                    backgroundColor: colors.cardElevated,
+                    borderRadius: 10,
+                    minHeight: 100,
+                    textAlignVertical: 'top',
+                  }}
+                />
+              </Card>
+            </Animated.View>
 
-        {/* Save Button */}
-        {!isInternal && (
-          <View style={{ 
-            padding: 16, 
-            backgroundColor: colors.surface,
-            borderTopWidth: 1,
-            borderTopColor: colors.border,
-          }}>
-            <Button onPress={handleSave} loading={loading} fullWidth size="lg">
-              {isNew ? 'Añadir alimento' : 'Guardar cambios'}
-            </Button>
+            {/* Save Button */}
+            <View style={{ 
+              padding: 16, 
+              backgroundColor: colors.surface,
+              borderTopWidth: 1,
+              borderTopColor: colors.border,
+            }}>
+              <Button onPress={handleSave} loading={loading} fullWidth size="lg">
+                {isNew ? 'Añadir alimento' : 'Guardar cambios'}
+              </Button>
 
-            {!isNew && (
-              <Pressable
-                onPress={handleDelete}
-                style={{ alignItems: 'center', marginTop: 12 }}
-              >
-                <Text style={{ color: colors.error, fontWeight: '600', fontSize: 14 }}>
-                  Eliminar alimento
-                </Text>
-              </Pressable>
-            )}
-          </View>
+              {!isNew && (
+                <Pressable
+                  onPress={handleDelete}
+                  style={{ alignItems: 'center', marginTop: 12 }}
+                >
+                  <Text style={{ color: colors.error, fontWeight: '600', fontSize: 14 }}>
+                    Eliminar alimento
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          </ScrollView>
         )}
 
         {/* Component Modal */}

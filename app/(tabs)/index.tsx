@@ -1993,18 +1993,22 @@ export default function HomeScreen() {
                         const range = maxW - minW || 1;
                         const displayHistory = filteredHistory.slice(-20); // Max 20 points for readability
                         
-                        // Calculate points for line
-                        const chartWidth = 100; // percentage
+                        // Simple and reliable line chart using SVG-like approach with View
                         const chartHeight = 60;
+                        const chartWidth = 100; // percentage
+                        const leftPadding = 40; // for Y-axis labels
+                        const rightPadding = 8;
+                        const usableWidth = chartWidth - (rightPadding * 2);
+                        
+                        // Calculate positions as percentages
                         const points = displayHistory.map((entry, index) => {
-                          const x = displayHistory.length > 1 
-                            ? (index / (displayHistory.length - 1)) * chartWidth 
+                          const xPercent = displayHistory.length > 1 
+                            ? rightPadding + ((index / (displayHistory.length - 1)) * usableWidth)
                             : 50;
                           const y = chartHeight - ((entry.weight_kg - minW) / range) * chartHeight;
-                          return { x, y, entry };
+                          return { xPercent, y, entry, weight: entry.weight_kg };
                         });
                         
-                        // Create SVG-like path for line chart using View
                         return (
                           <View style={{ flex: 1, position: 'relative' }}>
                             {/* Y-axis labels */}
@@ -2022,14 +2026,15 @@ export default function HomeScreen() {
                             
                             {/* Chart area */}
                             <View style={{ 
-                              marginLeft: 40, 
+                              marginLeft: leftPadding, 
                               flex: 1, 
                               position: 'relative',
                               borderLeftWidth: 1,
                               borderBottomWidth: 1,
                               borderColor: colors.border,
+                              height: chartHeight,
                             }}>
-                              {/* Grid lines */}
+                              {/* Grid line */}
                               <View style={{ 
                                 position: 'absolute', 
                                 left: 0, 
@@ -2040,48 +2045,53 @@ export default function HomeScreen() {
                                 borderStyle: 'dashed',
                               }} />
                               
-                              {/* Points and connecting lines */}
-                              {points.map((point, index) => (
-                                <React.Fragment key={point.entry.id || index}>
-                                  {/* Line to next point */}
-                                  {index < points.length - 1 && (
+                              {/* Draw lines between points - using absolute positioning for reliability */}
+                              {points.map((point, index) => {
+                                const nextPoint = index < points.length - 1 ? points[index + 1] : null;
+                                
+                                return (
+                                  <React.Fragment key={point.entry.id || index}>
+                                    {/* Line segment to next point */}
+                                    {nextPoint && (() => {
+                                      // Calculate the actual distance and angle
+                                      const dxPercent = nextPoint.xPercent - point.xPercent;
+                                      const dy = nextPoint.y - point.y;
+                                      const angle = Math.atan2(dy, dxPercent) * (180 / Math.PI);
+                                      
+                                      // Use the percentage difference directly for width
+                                      return (
+                                        <View
+                                          style={{
+                                            position: 'absolute',
+                                            left: `${point.xPercent}%`,
+                                            top: point.y,
+                                            width: `${Math.max(0, dxPercent)}%`,
+                                            height: 2,
+                                            backgroundColor: colors.primary,
+                                            transform: [{ rotate: `${angle}deg` }],
+                                            transformOrigin: 'left center',
+                                          }}
+                                        />
+                                      );
+                                    })()}
+                                    {/* Point dot */}
                                     <View
                                       style={{
                                         position: 'absolute',
-                                        left: `${point.x}%`,
-                                        top: point.y,
-                                        width: `${points[index + 1].x - point.x}%`,
-                                        height: 2,
-                                        backgroundColor: colors.primary,
-                                        transform: [
-                                          { 
-                                            rotate: `${Math.atan2(
-                                              points[index + 1].y - point.y,
-                                              (points[index + 1].x - point.x) * 2.5 // Approx width factor
-                                            ) * (180 / Math.PI)}deg` 
-                                          },
-                                        ],
-                                        transformOrigin: 'left center',
+                                        left: `${point.xPercent}%`,
+                                        top: point.y - 4,
+                                        width: 8,
+                                        height: 8,
+                                        borderRadius: 4,
+                                        backgroundColor: index === points.length - 1 ? colors.primary : colors.background,
+                                        borderWidth: 2,
+                                        borderColor: colors.primary,
+                                        marginLeft: -4,
                                       }}
                                     />
-                                  )}
-                                  {/* Point dot */}
-                                  <View
-                                    style={{
-                                      position: 'absolute',
-                                      left: `${point.x}%`,
-                                      top: point.y - 4,
-                                      width: 8,
-                                      height: 8,
-                                      borderRadius: 4,
-                                      backgroundColor: index === points.length - 1 ? colors.primary : colors.background,
-                                      borderWidth: 2,
-                                      borderColor: colors.primary,
-                                      marginLeft: -4,
-                                    }}
-                                  />
-                                </React.Fragment>
-                              ))}
+                                  </React.Fragment>
+                                );
+                              })}
                             </View>
                             
                             {/* X-axis dates */}
