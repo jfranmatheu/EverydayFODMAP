@@ -73,6 +73,12 @@ export default function FoodScreen() {
   const [nutrition, setNutrition] = useState<Partial<NutritionInfo>>({});
   const [nutriScore, setNutriScore] = useState<NutriScore>(null);
   
+  // Selected minerals and vitamins (only show selected ones for editing)
+  const [selectedMinerals, setSelectedMinerals] = useState<string[]>([]);
+  const [selectedVitamins, setSelectedVitamins] = useState<string[]>([]);
+  const [showMineralSelector, setShowMineralSelector] = useState(false);
+  const [showVitaminSelector, setShowVitaminSelector] = useState(false);
+  
   // Tags and digestive effect
   const [tags, setTags] = useState<string[]>([]);
   const [digestiveEffect, setDigestiveEffect] = useState<number>(0);
@@ -188,11 +194,23 @@ export default function FoodScreen() {
             console.log('[FoodScreen] Parsed nutrition:', nutri);
             setNutrition(nutri);
             setShowNutrition(true);
+            
+            // Detect which minerals and vitamins have values
+            const minerals = ['potassium_mg', 'calcium_mg', 'iron_mg', 'magnesium_mg', 'phosphorus_mg', 'zinc_mg', 'copper_mg', 'manganese_mg', 'selenium_mcg'];
+            const vitamins = ['vitamin_a_mcg', 'vitamin_b1_mg', 'vitamin_b2_mg', 'vitamin_b3_mg', 'vitamin_b5_mg', 'vitamin_b6_mg', 'vitamin_b9_mcg', 'vitamin_b12_mcg', 'vitamin_c_mg', 'vitamin_d_mcg', 'vitamin_e_mg', 'vitamin_k_mcg'];
+            
+            const hasMinerals = minerals.filter(m => nutri[m] !== undefined && nutri[m] !== null);
+            const hasVitamins = vitamins.filter(v => nutri[v] !== undefined && nutri[v] !== null);
+            
+            setSelectedMinerals(hasMinerals);
+            setSelectedVitamins(hasVitamins);
           } catch (e) {
             console.log('Error parsing nutrition:', e);
           }
         } else {
           console.log('[FoodScreen] No nutrition data found for food:', food.name);
+          setSelectedMinerals([]);
+          setSelectedVitamins([]);
         }
         
         if (food.nutri_score) {
@@ -991,12 +1009,116 @@ export default function FoodScreen() {
           </Animated.View>
         )}
 
+        {/* Nutri-Score and Digestive Effect - Side by side on large screens */}
+        {(nutriScore || digestiveEffect !== 0) && (
+          <Animated.View entering={FadeInDown.delay(250).springify()}>
+            <View style={{ flexDirection: isLargeScreen ? 'row' : 'column', gap: 16, marginBottom: 16 }}>
+              {/* Nutri-Score Card */}
+              {nutriScore && (
+                <Card style={isLargeScreen ? { flex: 1, marginBottom: 0 } : { marginBottom: 16 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <View style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: 8,
+                      backgroundColor: '#FF9800' + '15',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Ionicons name="star" size={16} color="#FF9800" />
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                      Nutri-Score
+                    </Text>
+                  </View>
+                  <View style={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: 12,
+                    backgroundColor: NUTRISCORE_COLORS[nutriScore],
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    alignSelf: 'center',
+                  }}>
+                    <Text style={{
+                      fontSize: 32,
+                      fontWeight: '800',
+                      color: '#FFFFFF',
+                    }}>
+                      {nutriScore}
+                    </Text>
+                  </View>
+                </Card>
+              )}
+
+              {/* Digestive Effect Card */}
+              {digestiveEffect !== 0 && (
+                <Card style={isLargeScreen ? { flex: 1, marginBottom: 0 } : { marginBottom: 16 }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <Ionicons name="medical" size={16} color="#9C27B0" />
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                      Efecto Digestivo
+                    </Text>
+                  </View>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, justifyContent: 'center' }}>
+                    <Text style={{ fontSize: 12, color: colors.error, fontWeight: '600' }}>Diarrea</Text>
+                    <View style={{ flexDirection: 'row', gap: 4 }}>
+                      {[-2, -1, 0, 1, 2].map(value => (
+                        <View
+                          key={value}
+                          style={{
+                            width: 36,
+                            height: 36,
+                            borderRadius: 18,
+                            backgroundColor: digestiveEffect === value 
+                              ? (value < 0 ? colors.error : value > 0 ? '#FF9800' : colors.primary)
+                              : 'transparent',
+                            borderWidth: 2,
+                            borderColor: digestiveEffect === value 
+                              ? (value < 0 ? colors.error : value > 0 ? '#FF9800' : colors.primary)
+                              : colors.border,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                          }}
+                        >
+                          <Text style={{
+                            fontSize: 14,
+                            fontWeight: '700',
+                            color: digestiveEffect === value ? '#FFFFFF' : colors.textMuted,
+                          }}>
+                            {value}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                    <Text style={{ fontSize: 12, color: '#FF9800', fontWeight: '600' }}>Estreñimiento</Text>
+                  </View>
+                  <Text style={{ fontSize: 11, color: colors.textMuted, textAlign: 'center', marginTop: 8 }}>
+                    {digestiveEffect < 0 ? `Puede empeorar diarrea (${Math.abs(digestiveEffect)})` :
+                     digestiveEffect > 0 ? `Puede empeorar estreñimiento (+${digestiveEffect})` :
+                     'Neutro'}
+                  </Text>
+                </Card>
+              )}
+            </View>
+          </Animated.View>
+        )}
+
         {/* Tags */}
         {tags.length > 0 && (
-          <Animated.View entering={FadeInDown.delay(250).springify()}>
+          <Animated.View entering={FadeInDown.delay(275).springify()}>
             <Card style={{ marginBottom: 16 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                <Ionicons name="pricetag" size={16} color={colors.primary} />
+                <View style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 8,
+                  backgroundColor: colors.primary + '15',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <Ionicons name="pricetag" size={16} color={colors.primary} />
+                </View>
                 <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
                   Etiquetas
                 </Text>
@@ -1024,58 +1146,6 @@ export default function FoodScreen() {
                   </View>
                 ))}
               </View>
-            </Card>
-          </Animated.View>
-        )}
-
-        {/* Digestive Effect */}
-        {digestiveEffect !== 0 && (
-          <Animated.View entering={FadeInDown.delay(275).springify()}>
-            <Card style={{ marginBottom: 16 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                <Ionicons name="medical" size={16} color="#9C27B0" />
-                <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
-                  Efecto Digestivo
-                </Text>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={{ fontSize: 12, color: colors.error, fontWeight: '600' }}>Diarrea</Text>
-                <View style={{ flexDirection: 'row', gap: 4, flex: 1, justifyContent: 'center' }}>
-                  {[-2, -1, 0, 1, 2].map(value => (
-                    <View
-                      key={value}
-                      style={{
-                        width: 36,
-                        height: 36,
-                        borderRadius: 18,
-                        backgroundColor: digestiveEffect === value 
-                          ? (value < 0 ? colors.error : value > 0 ? '#FF9800' : colors.primary)
-                          : 'transparent',
-                        borderWidth: 2,
-                        borderColor: digestiveEffect === value 
-                          ? (value < 0 ? colors.error : value > 0 ? '#FF9800' : colors.primary)
-                          : colors.border,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}
-                    >
-                      <Text style={{
-                        fontSize: 14,
-                        fontWeight: '700',
-                        color: digestiveEffect === value ? '#FFFFFF' : colors.textMuted,
-                      }}>
-                        {value}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-                <Text style={{ fontSize: 12, color: '#FF9800', fontWeight: '600' }}>Estreñimiento</Text>
-              </View>
-              <Text style={{ fontSize: 11, color: colors.textMuted, textAlign: 'center', marginTop: 8 }}>
-                {digestiveEffect < 0 ? `Puede empeorar diarrea (${Math.abs(digestiveEffect)})` :
-                 digestiveEffect > 0 ? `Puede empeorar estreñimiento (+${digestiveEffect})` :
-                 'Neutro'}
-              </Text>
             </Card>
           </Animated.View>
         )}
@@ -1480,46 +1550,172 @@ export default function FoodScreen() {
               </View>
             </Animated.View>
 
-            {/* Row 2: Minerals & Vitamins */}
+            {/* Row 2: Minerals */}
             <Animated.View entering={FadeInDown.delay(175).springify()}>
               <Card style={{ marginBottom: 16 }}>
                 <View style={{ 
                   flexDirection: 'row', 
                   alignItems: 'center', 
-                  gap: 8,
+                  justifyContent: 'space-between',
                   marginBottom: 12,
                 }}>
-                  <View style={{
-                    width: 28,
-                    height: 28,
-                    borderRadius: 6,
-                    backgroundColor: '#9C27B0' + '15',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    <Ionicons name="sparkles" size={14} color="#9C27B0" />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 6,
+                      backgroundColor: '#9C27B0' + '15',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Ionicons name="sparkles" size={14} color="#9C27B0" />
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                      Minerales (opcional)
+                    </Text>
                   </View>
-                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
-                    Minerales y Vitaminas (opcional)
-                  </Text>
+                  <Pressable
+                    onPress={() => setShowMineralSelector(true)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      backgroundColor: colors.primary + '15',
+                      borderRadius: 8,
+                    }}
+                  >
+                    <Ionicons name="add" size={16} color={colors.primary} />
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary }}>
+                      Agregar
+                    </Text>
+                  </Pressable>
                 </View>
                 
-                <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
-                  <NutritionInput label="Potasio" value={nutrition.potassium_mg} unit="mg" field="potassium_mg" color="#9C27B0" />
-                  <NutritionInput label="Calcio" value={nutrition.calcium_mg} unit="mg" field="calcium_mg" color="#9C27B0" />
-                  <NutritionInput label="Hierro" value={nutrition.iron_mg} unit="mg" field="iron_mg" color="#9C27B0" />
-                </View>
-                
-                {/* Disclaimer */}
-                <Text style={{ 
-                  fontSize: 10, 
-                  color: colors.textMuted, 
-                  marginTop: 14,
-                  lineHeight: 14,
-                  textAlign: 'center',
+                {selectedMinerals.length === 0 ? (
+                  <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+                    <Ionicons name="sparkles-outline" size={32} color={colors.textMuted} />
+                    <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 8 }}>
+                      No hay minerales agregados
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+                    {selectedMinerals.map(field => {
+                      const labels: Record<string, { label: string; unit: string }> = {
+                        potassium_mg: { label: 'Potasio', unit: 'mg' },
+                        calcium_mg: { label: 'Calcio', unit: 'mg' },
+                        iron_mg: { label: 'Hierro', unit: 'mg' },
+                        magnesium_mg: { label: 'Magnesio', unit: 'mg' },
+                        phosphorus_mg: { label: 'Fósforo', unit: 'mg' },
+                        zinc_mg: { label: 'Zinc', unit: 'mg' },
+                        copper_mg: { label: 'Cobre', unit: 'mg' },
+                        manganese_mg: { label: 'Manganeso', unit: 'mg' },
+                        selenium_mcg: { label: 'Selenio', unit: 'mcg' },
+                      };
+                      const info = labels[field];
+                      if (!info) return null;
+                      return (
+                        <View key={field} style={{ flex: 1, minWidth: 100 }}>
+                          <NutritionInput 
+                            label={info.label} 
+                            value={nutrition[field as keyof NutritionInfo] as number} 
+                            unit={info.unit} 
+                            field={field as keyof NutritionInfo} 
+                            color="#9C27B0" 
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
+              </Card>
+            </Animated.View>
+
+            {/* Row 2b: Vitamins */}
+            <Animated.View entering={FadeInDown.delay(190).springify()}>
+              <Card style={{ marginBottom: 16 }}>
+                <View style={{ 
+                  flexDirection: 'row', 
+                  alignItems: 'center', 
+                  justifyContent: 'space-between',
+                  marginBottom: 12,
                 }}>
-                  * Los valores diarios de referencia se basan en una dieta de 2000 kcal.
-                </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <View style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 6,
+                      backgroundColor: '#FF9800' + '15',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Ionicons name="sunny" size={14} color="#FF9800" />
+                    </View>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.text }}>
+                      Vitaminas (opcional)
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => setShowVitaminSelector(true)}
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                      paddingHorizontal: 12,
+                      paddingVertical: 6,
+                      backgroundColor: colors.primary + '15',
+                      borderRadius: 8,
+                    }}
+                  >
+                    <Ionicons name="add" size={16} color={colors.primary} />
+                    <Text style={{ fontSize: 12, fontWeight: '600', color: colors.primary }}>
+                      Agregar
+                    </Text>
+                  </Pressable>
+                </View>
+                
+                {selectedVitamins.length === 0 ? (
+                  <View style={{ alignItems: 'center', paddingVertical: 20 }}>
+                    <Ionicons name="sunny-outline" size={32} color={colors.textMuted} />
+                    <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 8 }}>
+                      No hay vitaminas agregadas
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: 'row', gap: 10, flexWrap: 'wrap' }}>
+                    {selectedVitamins.map(field => {
+                      const labels: Record<string, { label: string; unit: string }> = {
+                        vitamin_a_mcg: { label: 'Vitamina A', unit: 'mcg' },
+                        vitamin_b1_mg: { label: 'Vitamina B1', unit: 'mg' },
+                        vitamin_b2_mg: { label: 'Vitamina B2', unit: 'mg' },
+                        vitamin_b3_mg: { label: 'Vitamina B3', unit: 'mg' },
+                        vitamin_b5_mg: { label: 'Vitamina B5', unit: 'mg' },
+                        vitamin_b6_mg: { label: 'Vitamina B6', unit: 'mg' },
+                        vitamin_b9_mcg: { label: 'Vitamina B9', unit: 'mcg' },
+                        vitamin_b12_mcg: { label: 'Vitamina B12', unit: 'mcg' },
+                        vitamin_c_mg: { label: 'Vitamina C', unit: 'mg' },
+                        vitamin_d_mcg: { label: 'Vitamina D', unit: 'mcg' },
+                        vitamin_e_mg: { label: 'Vitamina E', unit: 'mg' },
+                        vitamin_k_mcg: { label: 'Vitamina K', unit: 'mcg' },
+                      };
+                      const info = labels[field];
+                      if (!info) return null;
+                      return (
+                        <View key={field} style={{ flex: 1, minWidth: 100 }}>
+                          <NutritionInput 
+                            label={info.label} 
+                            value={nutrition[field as keyof NutritionInfo] as number} 
+                            unit={info.unit} 
+                            field={field as keyof NutritionInfo} 
+                            color="#FF9800" 
+                          />
+                        </View>
+                      );
+                    })}
+                  </View>
+                )}
               </Card>
             </Animated.View>
 
@@ -2089,6 +2285,193 @@ export default function FoodScreen() {
                       </Text>
                     </Pressable>
                   ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Mineral Selector Modal */}
+        <Modal
+          visible={showMineralSelector}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowMineralSelector(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+            <View style={{ 
+              backgroundColor: colors.card, 
+              borderTopLeftRadius: 24, 
+              borderTopRightRadius: 24,
+              maxHeight: '70%',
+            }}>
+              <View style={{ 
+                flexDirection: 'row', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                padding: 16,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+              }}>
+                <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
+                  Seleccionar Minerales
+                </Text>
+                <Pressable onPress={() => setShowMineralSelector(false)}>
+                  <Ionicons name="close" size={24} color={colors.text} />
+                </Pressable>
+              </View>
+              <ScrollView style={{ padding: 16 }}>
+                {[
+                  { field: 'potassium_mg', label: 'Potasio', unit: 'mg' },
+                  { field: 'calcium_mg', label: 'Calcio', unit: 'mg' },
+                  { field: 'iron_mg', label: 'Hierro', unit: 'mg' },
+                  { field: 'magnesium_mg', label: 'Magnesio', unit: 'mg' },
+                  { field: 'phosphorus_mg', label: 'Fósforo', unit: 'mg' },
+                  { field: 'zinc_mg', label: 'Zinc', unit: 'mg' },
+                  { field: 'copper_mg', label: 'Cobre', unit: 'mg' },
+                  { field: 'manganese_mg', label: 'Manganeso', unit: 'mg' },
+                  { field: 'selenium_mcg', label: 'Selenio', unit: 'mcg' },
+                ].map(mineral => {
+                  const isSelected = selectedMinerals.includes(mineral.field);
+                  return (
+                    <Pressable
+                      key={mineral.field}
+                      onPress={() => {
+                        if (isSelected) {
+                          setSelectedMinerals(selectedMinerals.filter(m => m !== mineral.field));
+                          // Remove from nutrition
+                          const newNutrition = { ...nutrition };
+                          delete newNutrition[mineral.field as keyof NutritionInfo];
+                          setNutrition(newNutrition);
+                        } else {
+                          setSelectedMinerals([...selectedMinerals, mineral.field]);
+                          // Initialize with 0
+                          setNutrition(prev => ({ ...prev, [mineral.field]: 0 }));
+                        }
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: 14,
+                        marginBottom: 8,
+                        backgroundColor: isSelected ? colors.primary + '15' : colors.cardElevated,
+                        borderRadius: 12,
+                        borderWidth: 2,
+                        borderColor: isSelected ? colors.primary : 'transparent',
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <Ionicons name="sparkles" size={20} color={isSelected ? '#9C27B0' : colors.textMuted} />
+                        <View>
+                          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+                            {mineral.label}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                            {mineral.unit}
+                          </Text>
+                        </View>
+                      </View>
+                      {isSelected && (
+                        <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                      )}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Vitamin Selector Modal */}
+        <Modal
+          visible={showVitaminSelector}
+          animationType="slide"
+          transparent={true}
+          onRequestClose={() => setShowVitaminSelector(false)}
+        >
+          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' }}>
+            <View style={{ 
+              backgroundColor: colors.card, 
+              borderTopLeftRadius: 24, 
+              borderTopRightRadius: 24,
+              maxHeight: '70%',
+            }}>
+              <View style={{ 
+                flexDirection: 'row', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                padding: 16,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+              }}>
+                <Text style={{ fontSize: 18, fontWeight: '700', color: colors.text }}>
+                  Seleccionar Vitaminas
+                </Text>
+                <Pressable onPress={() => setShowVitaminSelector(false)}>
+                  <Ionicons name="close" size={24} color={colors.text} />
+                </Pressable>
+              </View>
+              <ScrollView style={{ padding: 16 }}>
+                {[
+                  { field: 'vitamin_a_mcg', label: 'Vitamina A', unit: 'mcg' },
+                  { field: 'vitamin_b1_mg', label: 'Vitamina B1 (Tiamina)', unit: 'mg' },
+                  { field: 'vitamin_b2_mg', label: 'Vitamina B2 (Riboflavina)', unit: 'mg' },
+                  { field: 'vitamin_b3_mg', label: 'Vitamina B3 (Niacina)', unit: 'mg' },
+                  { field: 'vitamin_b5_mg', label: 'Vitamina B5 (Ácido pantoténico)', unit: 'mg' },
+                  { field: 'vitamin_b6_mg', label: 'Vitamina B6', unit: 'mg' },
+                  { field: 'vitamin_b9_mcg', label: 'Vitamina B9 (Folato)', unit: 'mcg' },
+                  { field: 'vitamin_b12_mcg', label: 'Vitamina B12', unit: 'mcg' },
+                  { field: 'vitamin_c_mg', label: 'Vitamina C', unit: 'mg' },
+                  { field: 'vitamin_d_mcg', label: 'Vitamina D', unit: 'mcg' },
+                  { field: 'vitamin_e_mg', label: 'Vitamina E', unit: 'mg' },
+                  { field: 'vitamin_k_mcg', label: 'Vitamina K', unit: 'mcg' },
+                ].map(vitamin => {
+                  const isSelected = selectedVitamins.includes(vitamin.field);
+                  return (
+                    <Pressable
+                      key={vitamin.field}
+                      onPress={() => {
+                        if (isSelected) {
+                          setSelectedVitamins(selectedVitamins.filter(v => v !== vitamin.field));
+                          // Remove from nutrition
+                          const newNutrition = { ...nutrition };
+                          delete newNutrition[vitamin.field as keyof NutritionInfo];
+                          setNutrition(newNutrition);
+                        } else {
+                          setSelectedVitamins([...selectedVitamins, vitamin.field]);
+                          // Initialize with 0
+                          setNutrition(prev => ({ ...prev, [vitamin.field]: 0 }));
+                        }
+                      }}
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: 14,
+                        marginBottom: 8,
+                        backgroundColor: isSelected ? colors.primary + '15' : colors.cardElevated,
+                        borderRadius: 12,
+                        borderWidth: 2,
+                        borderColor: isSelected ? colors.primary : 'transparent',
+                      }}
+                    >
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <Ionicons name="sunny" size={20} color={isSelected ? '#FF9800' : colors.textMuted} />
+                        <View>
+                          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
+                            {vitamin.label}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                            {vitamin.unit}
+                          </Text>
+                        </View>
+                      </View>
+                      {isSelected && (
+                        <Ionicons name="checkmark-circle" size={24} color={colors.primary} />
+                      )}
+                    </Pressable>
+                  );
+                })}
               </ScrollView>
             </View>
           </View>
