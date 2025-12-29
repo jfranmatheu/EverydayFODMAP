@@ -2132,93 +2132,13 @@ export default function HomeScreen() {
                               <Text style={{ fontSize: 9, color: colors.textMuted }}>{minW.toFixed(1)}</Text>
                             </View>
                             
-                            {/* Chart area */}
-                            <View style={{ 
-                              marginLeft: leftPadding, 
-                              flex: 1, 
-                              position: 'relative',
-                              borderLeftWidth: 1,
-                              borderBottomWidth: 1,
-                              borderColor: colors.border,
-                              height: chartHeight,
-                            }}>
-                              {/* Grid line */}
-                              <View style={{ 
-                                position: 'absolute', 
-                                left: 0, 
-                                right: 0, 
-                                top: chartHeight / 2,
-                                borderTopWidth: 1,
-                                borderColor: colors.border,
-                                borderStyle: 'dashed',
-                              }} />
-                              
-                              {/* Draw lines and points - using a simpler, more reliable approach */}
-                              {points.map((point, index) => {
-                                const nextPoint = index < points.length - 1 ? points[index + 1] : null;
-                                
-                                return (
-                                  <React.Fragment key={point.entry.id || index}>
-                                    {/* Line segment to next point */}
-                                    {nextPoint && (() => {
-                                      // Calculate the difference in x (as percentage) and y (as pixels)
-                                      const dxPercent = nextPoint.xPercent - point.xPercent;
-                                      const dy = nextPoint.y - point.y;
-                                      
-                                      // For proper angle calculation, we need to normalize both to the same scale
-                                      // The chart area width in percentage is usableWidth
-                                      // We'll treat dxPercent as if it represents a proportional distance
-                                      // and normalize it to match the pixel scale of dy
-                                      // Assuming the chart container is roughly 300-400px wide, usableWidth% of that
-                                      // For simplicity, we'll use a scale factor that makes the angle calculation work
-                                      // The key insight: we need dx and dy in comparable units
-                                      // Let's use a scale factor: treat 1% width as roughly 3-4 pixels (typical for mobile)
-                                      const scaleFactor = 3.5; // pixels per percentage point
-                                      const dxPixels = dxPercent * scaleFactor;
-                                      
-                                      // Calculate angle using comparable units (both in pixels)
-                                      const angle = Math.atan2(dy, dxPixels) * (180 / Math.PI);
-                                      
-                                      // The width should be the distance in percentage units
-                                      const lineWidth = Math.max(0.2, Math.abs(dxPercent));
-                                      
-                                      return (
-                                        <View
-                                          key={`line-${index}`}
-                                          style={{
-                                            position: 'absolute',
-                                            left: `${point.xPercent}%`,
-                                            top: point.y,
-                                            width: `${lineWidth}%`,
-                                            height: 2.5,
-                                            backgroundColor: colors.primary,
-                                            transform: [{ rotate: `${angle}deg` }],
-                                            transformOrigin: '0% 50%',
-                                          }}
-                                        />
-                                      );
-                                    })()}
-                                    {/* Point dot - positioned at the exact point */}
-                                    <View
-                                      key={`point-${index}`}
-                                      style={{
-                                        position: 'absolute',
-                                        left: `${point.xPercent}%`,
-                                        top: point.y - 5,
-                                        width: 10,
-                                        height: 10,
-                                        borderRadius: 5,
-                                        backgroundColor: index === points.length - 1 ? colors.primary : colors.background,
-                                        borderWidth: 2.5,
-                                        borderColor: colors.primary,
-                                        marginLeft: -5,
-                                        zIndex: 10,
-                                      }}
-                                    />
-                                  </React.Fragment>
-                                );
-                              })}
-                            </View>
+                            {/* Chart area - using onLayout for accurate pixel calculations */}
+                            <WeightChart 
+                              points={points}
+                              chartHeight={chartHeight}
+                              leftPadding={leftPadding}
+                              colors={colors}
+                            />
                             
                             {/* X-axis dates */}
                             <View style={{ 
@@ -3635,3 +3555,107 @@ export default function HomeScreen() {
     </>
   );
 }
+
+// Weight Chart Component - uses onLayout for accurate pixel calculations
+const WeightChart = ({ 
+  points, 
+  chartHeight, 
+  leftPadding, 
+  colors 
+}: { 
+  points: Array<{ xPercent: number; y: number; entry: any; weight: number }>;
+  chartHeight: number;
+  leftPadding: number;
+  colors: any;
+}) => {
+  const [chartWidth, setChartWidth] = React.useState<number>(200); // Default estimate
+  
+  return (
+    <View 
+      onLayout={(e) => {
+        const width = e.nativeEvent.layout.width;
+        if (width > 0) {
+          setChartWidth(width);
+        }
+      }}
+      style={{ 
+        marginLeft: leftPadding, 
+        flex: 1, 
+        position: 'relative',
+        borderLeftWidth: 1,
+        borderBottomWidth: 1,
+        borderColor: colors.border,
+        height: chartHeight,
+      }}
+    >
+      {/* Grid line */}
+      <View style={{ 
+        position: 'absolute', 
+        left: 0, 
+        right: 0, 
+        top: chartHeight / 2,
+        borderTopWidth: 1,
+        borderColor: colors.border,
+        borderStyle: 'dashed',
+      }} />
+      
+      {/* Draw lines and points using absolute pixel positions */}
+      {points.map((point, index) => {
+        const nextPoint = index < points.length - 1 ? points[index + 1] : null;
+        
+        // Convert percentage X to absolute pixels
+        const pointX = (point.xPercent / 100) * chartWidth;
+        const pointY = point.y;
+        const nextX = nextPoint ? (nextPoint.xPercent / 100) * chartWidth : null;
+        const nextY = nextPoint ? nextPoint.y : null;
+        
+        return (
+          <React.Fragment key={point.entry.id || index}>
+            {/* Line segment to next point */}
+            {nextPoint && nextX !== null && nextY !== null && (() => {
+              // Calculate differences in pixels (both X and Y now in same units)
+              const dx = nextX - pointX;
+              const dy = nextY - pointY;
+              
+              // Calculate angle and distance
+              const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+              const distance = Math.sqrt(dx * dx + dy * dy);
+              
+              return (
+                <View
+                  key={`line-${index}`}
+                  style={{
+                    position: 'absolute',
+                    left: pointX,
+                    top: pointY - 1.25, // Center the 2.5px line vertically
+                    width: distance,
+                    height: 2.5,
+                    backgroundColor: colors.primary,
+                    transform: [{ rotate: `${angle}deg` }],
+                    transformOrigin: '0% 50%',
+                  }}
+                />
+              );
+            })()}
+            {/* Point dot - positioned at exact point center */}
+            <View
+              key={`point-${index}`}
+              style={{
+                position: 'absolute',
+                left: pointX - 5, // Center the 10px point horizontally
+                top: pointY - 5,  // Center the 10px point vertically
+                width: 10,
+                height: 10,
+                borderRadius: 5,
+                backgroundColor: index === points.length - 1 ? colors.primary : colors.background,
+                borderWidth: 2.5,
+                borderColor: colors.primary,
+                zIndex: 10,
+              }}
+            />
+          </React.Fragment>
+        );
+      })}
+    </View>
+  );
+};
