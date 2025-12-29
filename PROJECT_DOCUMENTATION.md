@@ -7,16 +7,18 @@
 ### Key Features
 
 - 📱 Daily food diary with FODMAP level tracking
-- 🍽️ Meal logging by type (breakfast, lunch, dinner, snacks)
-- 💧 Water intake tracking
+- 🍽️ Meal logging by type (breakfast, lunch, dinner, snacks) with quantity tracking
+- 💧 Water intake tracking with daily target (default 2.5L)
 - 😷 Symptom logging with intensity scales
-- 💊 Treatment/medication management
+- 💊 Treatment/medication management with dose tracking
 - 🏃 Physical activity tracking
 - 📊 Analysis and correlation insights
-- 🧮 BMI calculation and weight tracking
+- 🧮 BMI calculation and weight tracking with line chart
 - 🔥 Daily calorie and macro tracking with gamified UI
-- 🎯 Nutritional target setting
+- 🎯 Nutritional target setting (calories, macros %, water)
 - 📸 Photo attachment for meals
+- 🏷️ Food tags and digestive effect tracking
+- ⭐ Nutri-Score (A-E) for foods
 - 🔔 Reminders and notifications
 
 ---
@@ -172,6 +174,7 @@ CREATE TABLE user_profile (
   target_protein_pct INTEGER,   -- Percentage of daily calories
   target_carbs_pct INTEGER,
   target_fat_pct INTEGER,
+  target_water_l REAL DEFAULT 2.5,  -- Daily water target in liters
   -- Optional detailed targets
   target_fiber_g REAL,
   target_sugars_g REAL,
@@ -207,16 +210,17 @@ CREATE TABLE foods (
   name TEXT NOT NULL,
   category TEXT DEFAULT 'other',
   fodmap_level TEXT CHECK(fodmap_level IN ('low', 'medium', 'high', 'unknown')),
-  fodmap_details TEXT,      -- JSON: {fructans, gos, lactose, fructose, sorbitol, mannitol}
+  fodmap_details TEXT,      -- JSON: {fructans, gos, lactose, fructose, sorbitol, mannitol, safe_serving, limit_serving}
   is_compound INTEGER DEFAULT 0,
-  nutrition TEXT,           -- JSON: NutritionInfo
+  nutrition TEXT,           -- JSON: NutritionInfo (includes minerals and vitamins)
   nutri_score TEXT CHECK(nutri_score IN ('A', 'B', 'C', 'D', 'E')),
-  serving_size TEXT,
+  serving_size TEXT,        -- Format: "100 g" or "100g"
   brand TEXT,
   barcode TEXT,
   image_uri TEXT,
   notes TEXT,
-  tags TEXT,                -- JSON array
+  tags TEXT,                -- JSON array of strings
+  digestive_effect INTEGER DEFAULT 0,  -- -2 to 2: -2 bad for diarrhea, 0 neutral, 2 bad for constipation
   folder_id INTEGER,
   is_favorite INTEGER DEFAULT 0,
   source TEXT CHECK(source IN ('user', 'internal', 'external')),
@@ -481,15 +485,48 @@ interface FODMAPDetails {
 interface NutritionInfo {
   per_serving?: boolean;
   serving_size?: string;
+  // Macros (required for main display)
   calories?: number;
   protein_g?: number;
   carbs_g?: number;
   fat_g?: number;
+  // Secondary macros (optional)
   saturated_fat_g?: number;
+  monounsaturated_fat_g?: number;
+  polyunsaturated_fat_g?: number;
+  trans_fat_g?: number;
   fiber_g?: number;
   sugars_g?: number;
+  added_sugars_g?: number;
+  cholesterol_mg?: number;
+  // Minerals (optional, user-selectable)
   sodium_mg?: number;
   potassium_mg?: number;
+  calcium_mg?: number;
+  iron_mg?: number;
+  magnesium_mg?: number;
+  phosphorus_mg?: number;
+  zinc_mg?: number;
+  copper_mg?: number;
+  manganese_mg?: number;
+  selenium_mcg?: number;
+  // Vitamins (optional, user-selectable)
+  vitamin_a_mcg?: number;
+  vitamin_b1_mg?: number; // Thiamine
+  vitamin_b2_mg?: number; // Riboflavin
+  vitamin_b3_mg?: number; // Niacin
+  vitamin_b5_mg?: number; // Pantothenic acid
+  vitamin_b6_mg?: number;
+  vitamin_b9_mcg?: number; // Folate
+  vitamin_b12_mcg?: number;
+  vitamin_c_mg?: number;
+  vitamin_d_mcg?: number;
+  vitamin_e_mg?: number;
+  vitamin_k_mcg?: number;
+  // Other
+  water_g?: number;
+  alcohol_g?: number;
+  caffeine_mg?: number;
 }
 ```
 
@@ -503,9 +540,10 @@ interface UserProfile {
   height_cm: number | null;
   // Target nutrition
   target_calories: number | null;
-  target_protein_pct: number | null;
+  target_protein_pct: number | null; // Percentage of daily calories
   target_carbs_pct: number | null;
   target_fat_pct: number | null;
+  target_water_l: number | null; // Daily water target in liters (default 2.5L)
   // Optional detailed targets
   target_fiber_g: number | null;
   target_sugars_g: number | null;
@@ -569,13 +607,15 @@ const MEAL_TYPE_ICONS = {
 
 - **Header**: Title "Inicio" with settings icon
 - **Profile Card**: User info with BMI visualization
-  - Weight timeline showing last 4-5 weight records
+  - Weight history line chart with period selector (All time, 2 years, 1 year, 6 months, 3 months, 1 month)
+  - Shows weight variation, min/max for selected period
   - Editable profile modal for personal info
 - **Daily Nutrition Card** ("Balance del día"): 
   - Gamified calorie counter with progress bar
-  - Macro nutrients (protein, carbs, fat) with individual progress
+  - Macro nutrients (protein, carbs, fat) with individual progress cards
   - Target vs consumed comparison
-  - Edit button for nutritional targets (kcal, macros %)
+  - **Water tracking section**: Shows consumed/target liters with progress bar and quick-add button (+)
+  - Edit button for nutritional targets (kcal, macros %, water in liters)
 - **Today's Treatments Card** (Gamified):
   - Progress ring showing doses taken/total
   - List of individual doses with time and dosage
@@ -613,12 +653,27 @@ const MEAL_TYPE_ICONS = {
 
 ### Food Detail Screen (`app/food/[id].tsx`)
 
-- **Section Tabs**: Three-tab navigation for food details
-  1. **Nutrición (Nutrition)**: Name, category, brand, serving size, compound food toggle, nutritional info (required and optional fields), Nutri-Score
-  2. **FODMAP**: Overall FODMAP level, detailed categories (Monash), safe/limit serving sizes
-  3. **Extras**: Photo upload, notes
-- **Compound Foods**: Add ingredients with individual FODMAP levels
-- **Read-only Mode**: For internal (built-in) foods from database
+- **Two Modes**: Read-only view (for internal foods) and Edit view (for user-created foods)
+- **Read View**: Simplified display showing:
+  - Header with name, category icon, brand, FODMAP badge, and image
+  - Nutrition information (calories, macros, minerals, vitamins)
+  - FODMAP details with safe/limit servings
+  - Nutri-Score display (if set)
+  - Digestive effect indicator (-2 to 2 scale)
+  - Tags as badges
+  - Ingredients list (if compound food)
+  - Notes
+- **Edit View**: Single-screen layout (no tabs) with:
+  - **Row 1**: Ingredients (left) | Nutrition (right) on large screens
+  - **Row 2**: Minerals block (with selector to add multiple) | Vitamins block (with selector to add multiple)
+  - **Row 3**: Nutri-Score (left) | Digestive Effect (right) on large screens
+  - **Row 4**: FODMAP (full width)
+  - **Bottom**: Tags (full width) | Notes (full width)
+  - Photo upload field next to name block (not inside)
+  - Serving size integrated into nutrition section header
+  - Minerals and vitamins: Empty by default, button to open selector modal for multiple selection
+  - After selection, only selected minerals/vitamins are shown for editing
+- **Compound Foods**: Ingredients block always visible (no toggle), add components with quantity/unit/FODMAP level
 
 ### Database Helper (`lib/database.ts`)
 
@@ -734,13 +789,35 @@ Private project - All rights reserved.
 
 ---
 
-*Last updated: 29 December 2024 - v3*
+*Last updated: 30 December 2024 - v4*
 
-### Recent Changes (v3)
+### Recent Changes (v4)
 
-- Reorganized food detail screen tabs: Nutrición → FODMAP → Extras
-- Added weight timeline to Profile Card
-- Moved settings icon to header
-- Moved nutritional targets editor to Daily Nutrition Card
-- Removed greeting message from home page
-- Cleaned up duplicate code in food screen
+#### Home Screen Improvements
+- Added water tracking to "Balance del día" card with daily target (default 2.5L)
+- Quick-add button (+) to add water glasses directly from home page
+- Improved weight history line chart with better alignment and period selector
+- Water target configurable in nutrition targets modal
+
+#### Food Detail Screen Redesign
+- **Read View**: Complete redesign showing all data (nutri-score, tags, digestive effect, minerals, vitamins)
+- **Edit View**: Single-screen layout (no tabs) with organized rows:
+  - Ingredients and Nutrition side-by-side on large screens
+  - Separate blocks for Minerals and Vitamins with multi-select modals
+  - Nutri-Score and Digestive Effect side-by-side on large screens
+  - FODMAP full width
+  - Tags and Notes at bottom
+- Photo upload field moved outside name block, positioned next to it
+- Serving size integrated into nutrition header
+- Minerals and vitamins: Empty by default, use selector to add multiple, then edit quantities
+
+#### Database Updates
+- Added `target_water_l` field to `user_profile` (default 2.5L)
+- Added `digestive_effect` field to `foods` table (-2 to 2 scale)
+- Enhanced `NutritionInfo` type with all minerals and vitamins
+
+#### UI/UX Improvements
+- Gamified water tracking with progress bar
+- Better visual alignment in food detail screen
+- Improved weight chart calculation for proper line alignment
+- Modern, sleek design throughout
