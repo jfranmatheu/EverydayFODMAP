@@ -685,6 +685,7 @@ export interface UserProfile {
   target_protein_pct: number | null; // Percentage of daily calories
   target_carbs_pct: number | null;
   target_fat_pct: number | null;
+  target_water_l: number | null; // Daily water target in liters (default 2.5L)
   // Optional detailed targets
   target_fiber_g: number | null;
   target_sugars_g: number | null;

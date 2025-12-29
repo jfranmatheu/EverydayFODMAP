@@ -77,6 +77,7 @@ export default function HomeScreen() {
   // Daily nutrition consumed
   const [todayCalories, setTodayCalories] = useState(0);
   const [todayMacros, setTodayMacros] = useState({ protein: 0, carbs: 0, fat: 0 });
+  const [todayWater, setTodayWater] = useState(0); // in liters
   
   // Edit profile form
   const [editBirthDate, setEditBirthDate] = useState('');
@@ -88,6 +89,7 @@ export default function HomeScreen() {
   const [editTargetProtein, setEditTargetProtein] = useState('');
   const [editTargetCarbs, setEditTargetCarbs] = useState('');
   const [editTargetFat, setEditTargetFat] = useState('');
+  const [editTargetWater, setEditTargetWater] = useState('');
   
   // Add weight form
   const [newWeight, setNewWeight] = useState('');
@@ -141,6 +143,7 @@ export default function HomeScreen() {
         setEditTargetProtein(profileData.target_protein_pct?.toString() || '');
         setEditTargetCarbs(profileData.target_carbs_pct?.toString() || '');
         setEditTargetFat(profileData.target_fat_pct?.toString() || '');
+        setEditTargetWater((profileData.target_water_l || 2.5).toString());
       }
     } catch (error) {
       console.error('Error loading profile:', error);
@@ -326,6 +329,15 @@ export default function HomeScreen() {
         carbs: Math.round(totalCarbs),
         fat: Math.round(totalFat),
       });
+      
+      // Load today's water intake
+      const waterIntake = await db.getAllAsync(
+        'SELECT * FROM water_intake WHERE date = ?',
+        [today]
+      ) as any[];
+      
+      const totalWaterMl = waterIntake.reduce((sum, w) => sum + (w.amount_ml || 0), 0);
+      setTodayWater(totalWaterMl / 1000); // Convert to liters
     } catch (error) {
       console.error('Error loading today nutrition:', error);
     }
@@ -867,11 +879,15 @@ export default function HomeScreen() {
     colors, 
     consumed, 
     targets,
+    water,
+    waterTarget,
     onEditTargets,
   }: { 
     colors: any; 
     consumed: { calories: number; protein: number; carbs: number; fat: number };
     targets: { calories: number; protein_pct: number; carbs_pct: number; fat_pct: number };
+    water: number; // in liters
+    waterTarget: number; // in liters
     onEditTargets: () => void;
   }) => {
     const targetMacros = calculateMacroGrams(targets.calories, targets.protein_pct, targets.carbs_pct, targets.fat_pct);
@@ -1063,6 +1079,95 @@ export default function HomeScreen() {
                 </View>
               );
             })}
+          </View>
+          
+          {/* Water Section */}
+          <View style={{ 
+            marginTop: 20, 
+            paddingTop: 20, 
+            borderTopWidth: 1, 
+            borderTopColor: colors.border 
+          }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <View style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: 16,
+                  backgroundColor: colors.water + '25',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}>
+                  <Ionicons name="water" size={18} color={colors.water} />
+                </View>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: colors.text }}>
+                  Agua
+                </Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+                  <Text style={{ fontSize: 24, fontWeight: '700', color: colors.water }}>
+                    {water.toFixed(2)}
+                  </Text>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary, marginLeft: 4 }}>
+                    / {waterTarget.toFixed(1)} L
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={async () => {
+                    try {
+                      const db = await getDatabase();
+                      const now = new Date();
+                      const today = now.toISOString().split('T')[0];
+                      await insertRow('water_intake', {
+                        glasses: 1,
+                        amount_ml: 250,
+                        date: today,
+                        time: now.toTimeString().split(' ')[0].slice(0, 5),
+                      });
+                      await loadTodayNutrition();
+                      Alert.alert('¡Agregado!', '1 vaso de agua registrado');
+                    } catch (error) {
+                      console.error('Error adding water:', error);
+                      Alert.alert('Error', 'No se pudo agregar el agua');
+                    }
+                  }}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: colors.water,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Ionicons name="add" size={20} color="#FFFFFF" />
+                </Pressable>
+              </View>
+            </View>
+            
+            {/* Water Progress Bar */}
+            <View style={{
+              height: 10,
+              backgroundColor: colors.cardElevated,
+              borderRadius: 5,
+              overflow: 'hidden',
+            }}>
+              <View 
+                style={{
+                  width: `${Math.min((water / waterTarget) * 100, 100)}%`,
+                  height: '100%',
+                  backgroundColor: colors.water,
+                  borderRadius: 5,
+                }}
+              />
+            </View>
+            <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 6, textAlign: 'center' }}>
+              {water >= waterTarget 
+                ? '¡Objetivo alcanzado! 🎉'
+                : `${(waterTarget - water).toFixed(2)} L restantes`
+              }
+            </Text>
           </View>
         </View>
       </Card>
@@ -2001,12 +2106,15 @@ export default function HomeScreen() {
                         const usableWidth = chartWidth - (rightPadding * 2);
                         
                         // Calculate positions as percentages
+                        // Ensure points are evenly spaced and don't go beyond boundaries
                         const points = displayHistory.map((entry, index) => {
                           const xPercent = displayHistory.length > 1 
                             ? rightPadding + ((index / (displayHistory.length - 1)) * usableWidth)
-                            : 50;
+                            : rightPadding + (usableWidth / 2);
+                          // Clamp xPercent to ensure it stays within bounds
+                          const clampedX = Math.max(rightPadding, Math.min(100 - rightPadding, xPercent));
                           const y = chartHeight - ((entry.weight_kg - minW) / range) * chartHeight;
-                          return { xPercent, y, entry, weight: entry.weight_kg };
+                          return { xPercent: clampedX, y, entry, weight: entry.weight_kg };
                         });
                         
                         return (
@@ -2045,7 +2153,7 @@ export default function HomeScreen() {
                                 borderStyle: 'dashed',
                               }} />
                               
-                              {/* Draw lines between points - using absolute positioning for reliability */}
+                              {/* Draw lines and points - using a simpler, more reliable approach */}
                               {points.map((point, index) => {
                                 const nextPoint = index < points.length - 1 ? points[index + 1] : null;
                                 
@@ -2053,40 +2161,58 @@ export default function HomeScreen() {
                                   <React.Fragment key={point.entry.id || index}>
                                     {/* Line segment to next point */}
                                     {nextPoint && (() => {
-                                      // Calculate the actual distance and angle
+                                      // Calculate the difference in x (as percentage) and y (as pixels)
                                       const dxPercent = nextPoint.xPercent - point.xPercent;
                                       const dy = nextPoint.y - point.y;
-                                      const angle = Math.atan2(dy, dxPercent) * (180 / Math.PI);
                                       
-                                      // Use the percentage difference directly for width
+                                      // For proper angle calculation, we need to normalize both to the same scale
+                                      // The chart area width in percentage is usableWidth
+                                      // We'll treat dxPercent as if it represents a proportional distance
+                                      // and normalize it to match the pixel scale of dy
+                                      // Assuming the chart container is roughly 300-400px wide, usableWidth% of that
+                                      // For simplicity, we'll use a scale factor that makes the angle calculation work
+                                      // The key insight: we need dx and dy in comparable units
+                                      // Let's use a scale factor: treat 1% width as roughly 3-4 pixels (typical for mobile)
+                                      const scaleFactor = 3.5; // pixels per percentage point
+                                      const dxPixels = dxPercent * scaleFactor;
+                                      
+                                      // Calculate angle using comparable units (both in pixels)
+                                      const angle = Math.atan2(dy, dxPixels) * (180 / Math.PI);
+                                      
+                                      // The width should be the distance in percentage units
+                                      const lineWidth = Math.max(0.2, Math.abs(dxPercent));
+                                      
                                       return (
                                         <View
+                                          key={`line-${index}`}
                                           style={{
                                             position: 'absolute',
                                             left: `${point.xPercent}%`,
                                             top: point.y,
-                                            width: `${Math.max(0, dxPercent)}%`,
-                                            height: 2,
+                                            width: `${lineWidth}%`,
+                                            height: 2.5,
                                             backgroundColor: colors.primary,
                                             transform: [{ rotate: `${angle}deg` }],
-                                            transformOrigin: 'left center',
+                                            transformOrigin: '0% 50%',
                                           }}
                                         />
                                       );
                                     })()}
-                                    {/* Point dot */}
+                                    {/* Point dot - positioned at the exact point */}
                                     <View
+                                      key={`point-${index}`}
                                       style={{
                                         position: 'absolute',
                                         left: `${point.xPercent}%`,
-                                        top: point.y - 4,
-                                        width: 8,
-                                        height: 8,
-                                        borderRadius: 4,
+                                        top: point.y - 5,
+                                        width: 10,
+                                        height: 10,
+                                        borderRadius: 5,
                                         backgroundColor: index === points.length - 1 ? colors.primary : colors.background,
-                                        borderWidth: 2,
+                                        borderWidth: 2.5,
                                         borderColor: colors.primary,
-                                        marginLeft: -4,
+                                        marginLeft: -5,
+                                        zIndex: 10,
                                       }}
                                     />
                                   </React.Fragment>
@@ -2223,6 +2349,8 @@ export default function HomeScreen() {
                     carbs_pct: profile?.target_carbs_pct || 50,
                     fat_pct: profile?.target_fat_pct || 30,
                   }}
+                  water={todayWater}
+                  waterTarget={profile?.target_water_l || 2.5}
                   onEditTargets={() => setShowNutritionTargetsModal(true)}
                 />
               </Animated.View>
@@ -2579,6 +2707,8 @@ export default function HomeScreen() {
                   carbs_pct: profile?.target_carbs_pct || 50,
                   fat_pct: profile?.target_fat_pct || 30,
                 }}
+                water={todayWater}
+                waterTarget={profile?.target_water_l || 2.5}
                 onEditTargets={() => setShowNutritionTargetsModal(true)}
               />
             </Animated.View>
@@ -3275,6 +3405,39 @@ export default function HomeScreen() {
                 );
               })()}
 
+              {/* Water Target */}
+              <View style={{ marginBottom: 20 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                  <Ionicons name="water" size={18} color={colors.water} />
+                  <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textSecondary }}>
+                    Agua diaria objetivo
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TextInput
+                    value={editTargetWater}
+                    onChangeText={setEditTargetWater}
+                    placeholder="2.5"
+                    placeholderTextColor={colors.textMuted}
+                    keyboardType="numeric"
+                    style={{
+                      flex: 1,
+                      fontSize: 24,
+                      fontWeight: '700',
+                      color: colors.water,
+                      padding: 14,
+                      backgroundColor: colors.water + '15',
+                      borderRadius: 12,
+                      textAlign: 'center',
+                    }}
+                  />
+                  <Text style={{ fontSize: 16, color: colors.textSecondary, fontWeight: '600' }}>L</Text>
+                </View>
+                <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 6, textAlign: 'center' }}>
+                  Recomendación: 2.5L diarios
+                </Text>
+              </View>
+
               {/* Save Button */}
               <Pressable
                 onPress={async () => {
@@ -3286,6 +3449,7 @@ export default function HomeScreen() {
                         target_protein_pct = ?, 
                         target_carbs_pct = ?, 
                         target_fat_pct = ?,
+                        target_water_l = ?,
                         updated_at = CURRENT_TIMESTAMP
                       WHERE id = 1`,
                       [
@@ -3293,6 +3457,7 @@ export default function HomeScreen() {
                         parseInt(editTargetProtein) || 20,
                         parseInt(editTargetCarbs) || 50,
                         parseInt(editTargetFat) || 30,
+                        parseFloat(editTargetWater) || 2.5,
                       ]
                     );
                     await loadProfile();

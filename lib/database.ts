@@ -1126,6 +1126,7 @@ export async function initDatabase(): Promise<void> {
       target_protein_pct INTEGER,
       target_carbs_pct INTEGER,
       target_fat_pct INTEGER,
+      target_water_l REAL DEFAULT 2.5,
       -- Optional detailed targets
       target_fiber_g REAL,
       target_sugars_g REAL,
