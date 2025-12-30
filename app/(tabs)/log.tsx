@@ -319,69 +319,6 @@ export default function LogScreen() {
     setShowMealEditor(true);
   };
 
-  const SectionHeader = ({ 
-    title, 
-    icon, 
-    color, 
-    count,
-    onAdd,
-  }: { 
-    title: string; 
-    icon: keyof typeof Ionicons.glyphMap; 
-    color: string;
-    count: number;
-    onAdd: () => void;
-  }) => (
-    <View style={{ 
-      flexDirection: 'row', 
-      alignItems: 'center', 
-      justifyContent: 'space-between',
-      marginBottom: 12,
-      marginTop: 8,
-    }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-        <View style={{
-          width: 32,
-          height: 32,
-          borderRadius: 10,
-          backgroundColor: color + '20',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}>
-          <Ionicons name={icon} size={16} color={color} />
-        </View>
-        <Text style={{ fontSize: 15, fontWeight: '600', color: colors.text }}>
-          {title}
-        </Text>
-        {count > 0 && (
-          <View style={{
-            backgroundColor: color + '20',
-            paddingHorizontal: 8,
-            paddingVertical: 2,
-            borderRadius: 10,
-          }}>
-            <Text style={{ fontSize: 12, fontWeight: '600', color }}>
-              {count}
-            </Text>
-          </View>
-        )}
-      </View>
-      <Pressable
-        onPress={onAdd}
-        style={{
-          width: 32,
-          height: 32,
-          borderRadius: 16,
-          backgroundColor: color + '20',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Ionicons name="add" size={18} color={color} />
-      </Pressable>
-    </View>
-  );
-
   const toggleMealExpanded = (mealType: MealType) => {
     setExpandedMeals(prev => {
       const newSet = new Set(prev);
