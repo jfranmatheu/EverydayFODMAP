@@ -1,12 +1,12 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, Pressable, Alert, Modal, ScrollView, TextInput } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { Card } from './Card';
-import { useTheme } from '@/contexts/ThemeContext';
 import { useDatabase } from '@/contexts/DatabaseContext';
-import { calculateMacroGrams, calculateAge, calculateDailyCalories, UserProfile, WeightLog, NutritionInfo } from '@/lib/types';
+import { useTheme } from '@/contexts/ThemeContext';
 import { getDatabase, insertRow } from '@/lib/database';
+import { calculateAge, calculateDailyCalories, calculateMacroGrams, NutritionInfo, UserProfile, WeightLog } from '@/lib/types';
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Alert, Modal, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
+import { Card } from './Card';
 
 interface DailyNutritionCardProps {
   profile: UserProfile | null;
@@ -228,13 +228,14 @@ export function DailyNutritionCard({ profile, style, onProfileUpdated }: DailyNu
   
   return (
     <>
-      <Card style={{ marginBottom: 16, padding: 0, overflow: 'hidden', flex: 1, ...style }}>
+      <Card style={{ marginBottom: 0, padding: 0, overflow: 'hidden', flex: 1, ...style }}>
         {/* Header */}
         <View style={{
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: 16,
+          paddingTop: 20, // HACK: to match the 'My Profile' card header height...
           paddingBottom: 12,
           borderBottomWidth: 1,
           borderBottomColor: colors.border,
